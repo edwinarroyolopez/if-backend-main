@@ -22,6 +22,9 @@ export type ValidatedEnv = {
   argon2MemoryCost: number;
   argon2TimeCost: number;
   argon2Parallelism: number;
+  superadminEmail: string;
+  superadminName: string;
+  superadminPassword?: string;
 };
 
 export function validateEnv(rawEnv: Record<string, unknown>): ValidatedEnv {
@@ -74,6 +77,10 @@ export function validateEnv(rawEnv: Record<string, unknown>): ValidatedEnv {
       env.ARGON2_PARALLELISM,
       'ARGON2_PARALLELISM',
     ),
+    superadminEmail:
+      env.SUPERADMIN_EMAIL?.trim() || 'superadmin@inflight.local',
+    superadminName: env.SUPERADMIN_NAME?.trim() || 'InflightOS Superadmin',
+    superadminPassword: env.SUPERADMIN_PASSWORD?.trim(),
   };
 
   if (validated.corsOrigins.length === 0) {

@@ -4,6 +4,12 @@ import { CrmModule } from 'src/modules/crm/crm.module';
 import { AccessControlModule } from 'src/platform/access-control/access-control.module';
 import { AuditModule } from 'src/platform/audit/audit.module';
 import { TransactionManagerService } from 'src/platform/database/transaction-manager.service';
+import { IdempotencyModule } from 'src/platform/idempotency/idempotency.module';
+import {
+  ProjectDocumentation,
+  ProjectDocumentationSchema,
+} from './project-documentation.schema';
+import { ProjectRoadmap, ProjectRoadmapSchema } from './project-roadmap.schema';
 import { Project, ProjectSchema } from './project.schema';
 import { ProjectsController } from './projects.controller';
 import { ProjectsService } from './projects.service';
@@ -13,7 +19,12 @@ import { ProjectsService } from './projects.service';
     AccessControlModule,
     AuditModule,
     CrmModule,
-    MongooseModule.forFeature([{ name: Project.name, schema: ProjectSchema }]),
+    IdempotencyModule,
+    MongooseModule.forFeature([
+      { name: Project.name, schema: ProjectSchema },
+      { name: ProjectDocumentation.name, schema: ProjectDocumentationSchema },
+      { name: ProjectRoadmap.name, schema: ProjectRoadmapSchema },
+    ]),
   ],
   controllers: [ProjectsController],
   providers: [ProjectsService, TransactionManagerService],

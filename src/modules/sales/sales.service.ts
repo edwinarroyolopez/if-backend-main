@@ -84,6 +84,7 @@ export class SalesService {
     const project = await this.projectsService.createProject(
       {
         organizationId: opportunity.organizationId,
+        projectKind: 'CLIENT',
         clientId: opportunity.clientId,
         opportunityId: opportunity.id,
         key: input.projectKey,

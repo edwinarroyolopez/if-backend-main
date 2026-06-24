@@ -171,8 +171,10 @@ export async function createOperationalFixtures(
   const projectResponse = await context.http
     .post('/api/v1/projects')
     .set('Authorization', `Bearer ${accessToken}`)
+    .set('Idempotency-Key', `project-create-${uniqueSeed}`)
     .send({
       organizationId,
+      projectKind: 'CLIENT',
       clientId: clientResponse.body.id as string,
       key: `project-${uniqueSeed}`,
       name: `Project ${uniqueSeed}`,

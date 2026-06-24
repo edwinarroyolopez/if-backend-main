@@ -77,6 +77,26 @@ export const PROJECT_STATUSES = [
 ] as const;
 export type ProjectStatus = (typeof PROJECT_STATUSES)[number];
 
+export const PROJECT_KINDS = ['CLIENT', 'INTERNAL'] as const;
+export type ProjectKind = (typeof PROJECT_KINDS)[number];
+
+export const PROJECT_HEALTH_STATUSES = [
+  'ON_TRACK',
+  'AT_RISK',
+  'BLOCKED',
+] as const;
+export type ProjectHealth = (typeof PROJECT_HEALTH_STATUSES)[number];
+
+export const PROJECT_READINESS_LEVELS = [
+  'EMPTY',
+  'DOCUMENTING',
+  'DOCUMENTED',
+  'ROADMAP_READY',
+  'BACKLOG_READY',
+  'READY_TO_START',
+] as const;
+export type ProjectReadinessLevel = (typeof PROJECT_READINESS_LEVELS)[number];
+
 export const MISSION_STATUSES = [
   'DRAFT',
   'PLANNED',

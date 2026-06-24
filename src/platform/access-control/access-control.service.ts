@@ -256,13 +256,15 @@ export class AccessControlService implements OnModuleInit {
     }
 
     await this.rolePermissionModel.deleteMany({ roleId }).session(session);
-    await this.rolePermissionModel.create(
-      permissions.map((permission) => ({
-        roleId,
-        permissionId: permission.id,
-      })),
-      { session, ordered: true },
-    );
+    if (permissions.length > 0) {
+      await this.rolePermissionModel.insertMany(
+        permissions.map((permission) => ({
+          roleId,
+          permissionId: permission.id,
+        })),
+        { session, ordered: true },
+      );
+    }
     role.version += 1;
     await role.save({ session });
 
@@ -344,33 +346,86 @@ export class AccessControlService implements OnModuleInit {
     actorUserId: string,
     session: ClientSession,
   ) {
-    for (const [roleKey, permissionKeys] of Object.entries(
-      DEFAULT_ORG_ROLE_TEMPLATES,
-    )) {
-      const role = await this.createRole(
-        organizationId,
-        {
-          key: roleKey,
-          name: roleKey.replaceAll('_', ' '),
-          systemDefined: true,
-        },
-        session,
+    const roleTemplates = Object.entries(DEFAULT_ORG_ROLE_TEMPLATES);
+    const permissions = await this.permissionDefinitionModel
+      .find({ key: { $in: [...PERMISSION_REGISTRY] }, status: 'ACTIVE' })
+      .session(session);
+    const permissionByKey = new Map(
+      permissions.map((permission) => [permission.key, permission]),
+    );
+    const missingPermission = PERMISSION_REGISTRY.find(
+      (permissionKey) => !permissionByKey.has(permissionKey),
+    );
+    if (missingPermission) {
+      throw new AppException(
+        404,
+        REASON_CODES.RESOURCE_NOT_FOUND,
+        'Permission definition was not found',
       );
-      await this.assignPermissionsToRole(role.id, [...permissionKeys], session);
-      if (roleKey === DEFAULT_BOOTSTRAP_ROLE_KEY) {
-        await this.assignRoleToPrincipal(
-          {
-            organizationId,
-            principalType: 'USER',
-            principalId: actorUserId,
-            roleId: role.id,
-            scopeType: 'ORGANIZATION',
-            scopeId: organizationId,
-            assignedBy: actorUserId,
-          },
-          session,
-        );
+    }
+
+    const roles = await this.roleModel.insertMany(
+      roleTemplates.map(([roleKey]) => ({
+        organizationId,
+        key: roleKey,
+        name: roleKey.replaceAll('_', ' '),
+        status: 'ACTIVE',
+        version: 2,
+        systemDefined: true,
+      })),
+      { session, ordered: true },
+    );
+    const roleByKey = new Map(roles.map((role) => [role.key, role]));
+    const rolePermissions = roleTemplates.flatMap(([roleKey, permissionKeys]) => {
+      const role = roleByKey.get(roleKey);
+      if (!role) {
+        return [];
       }
+
+      return [...new Set(permissionKeys)].map((permissionKey) => ({
+        roleId: role.id,
+        permissionId: permissionByKey.get(permissionKey)!.id,
+      }));
+    });
+    await this.rolePermissionModel.insertMany(rolePermissions, {
+      session,
+      ordered: true,
+    });
+
+    const bootstrapRole = roleByKey.get(DEFAULT_BOOTSTRAP_ROLE_KEY);
+    if (!bootstrapRole) {
+      throw new AppException(
+        404,
+        REASON_CODES.RESOURCE_NOT_FOUND,
+        'Role was not found',
+      );
+    }
+
+    await this.roleAssignmentModel.create(
+      [
+        {
+          organizationId,
+          principalType: 'USER',
+          principalId: actorUserId,
+          roleId: bootstrapRole.id,
+          scopeType: 'ORGANIZATION',
+          scopeId: organizationId,
+          status: 'ACTIVE' satisfies RoleAssignmentStatus,
+          assignedBy: actorUserId,
+        },
+      ],
+      { session },
+    );
+    const user = await this.identityService.bumpAuthorizationVersion(
+      actorUserId,
+      session,
+    );
+    if (!user) {
+      throw new AppException(
+        404,
+        REASON_CODES.RESOURCE_NOT_FOUND,
+        'User was not found',
+      );
     }
   }
 
@@ -484,6 +539,16 @@ export class AccessControlService implements OnModuleInit {
       session,
     );
     const activePermissionKeys = await this.listActivePermissionKeys(session);
+    if (
+      await this.roleHasPermissionCoverage(
+        role.id,
+        activePermissionKeys,
+        session,
+      )
+    ) {
+      return role;
+    }
+
     await this.assignPermissionsToRole(role.id, activePermissionKeys, session);
     const refreshedRole = await this.roleModel.findById(role.id).session(session);
     if (!refreshedRole) {
@@ -533,6 +598,31 @@ export class AccessControlService implements OnModuleInit {
       .sort({ key: 1 });
     const permissions = session ? await query.session(session) : await query;
     return permissions.map((permission) => permission.key);
+  }
+
+  private async roleHasPermissionCoverage(
+    roleId: string,
+    permissionKeys: string[],
+    session: ClientSession,
+  ) {
+    if (permissionKeys.length === 0) {
+      return true;
+    }
+
+    const permissions = await this.permissionDefinitionModel
+      .find({ key: { $in: permissionKeys }, status: 'ACTIVE' })
+      .session(session);
+    if (permissions.length !== permissionKeys.length) {
+      return false;
+    }
+
+    const permissionCount = await this.rolePermissionModel
+      .countDocuments({
+        roleId,
+        permissionId: { $in: permissions.map((permission) => permission.id) },
+      })
+      .session(session);
+    return permissionCount === permissions.length;
   }
 
   private async listRoleIdsWithPermission(

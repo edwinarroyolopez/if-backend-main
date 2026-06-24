@@ -6,6 +6,7 @@ export interface AuthenticatedPrincipal {
   sessionId: string;
   sessionVersion: number;
   authorizationVersion: number;
+  authorizationFingerprint: string;
   sessionKind: SessionKind;
   readOnly: boolean;
   activeOrganizationId?: string;

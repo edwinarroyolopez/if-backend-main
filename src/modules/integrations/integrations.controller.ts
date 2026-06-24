@@ -83,6 +83,7 @@ export class IntegrationsController {
 
   @Post('service-accounts/:serviceAccountId/rotate-credential')
   @UseGuards(JwtAuthGuard, ReadOnlySessionGuard, PermissionGuard)
+  @Throttle({ default: { limit: 5, ttl: 60000 } })
   @RequirePermission('integrations.service_account.rotate')
   @ResolveResource({ type: 'MODULE', moduleKey: 'integrations' })
   async rotateServiceCredential(
@@ -96,7 +97,7 @@ export class IntegrationsController {
   }
 
   @Post('auth/service/token')
-  @Throttle({ default: { limit: 20, ttl: 60000 } })
+  @Throttle({ default: { limit: 10, ttl: 60000 } })
   async issueServiceToken(@Body() dto: IssueServiceTokenDto) {
     return this.integrationsService.issueServiceAccessToken(dto);
   }

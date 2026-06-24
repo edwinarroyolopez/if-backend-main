@@ -4,13 +4,11 @@ import { ClientSession, Model } from 'mongoose';
 import { AppException } from 'src/common/errors/app-exception';
 import { REASON_CODES } from 'src/common/errors/reason-codes';
 import { AuthenticatedPrincipal } from 'src/common/types/authenticated-principal';
+import { PrincipalAuthorizationService } from 'src/platform/access-control/principal-authorization.service';
 import { AccessControlService } from 'src/platform/access-control/access-control.service';
 import { AuditService } from 'src/platform/audit/audit.service';
 import { TransactionManagerService } from 'src/platform/database/transaction-manager.service';
-import {
-  AuthSession,
-  AuthSessionDocument,
-} from 'src/platform/sessions/auth-session.schema';
+import { SessionContextService } from 'src/platform/sessions/session-context.service';
 import { SessionsService } from 'src/platform/sessions/sessions.service';
 import { Organization, OrganizationDocument } from './organization.schema';
 
@@ -19,11 +17,11 @@ export class OrganizationsService {
   constructor(
     @InjectModel(Organization.name)
     private readonly organizationModel: Model<OrganizationDocument>,
-    @InjectModel(AuthSession.name)
-    private readonly authSessionModel: Model<AuthSessionDocument>,
+    private readonly principalAuthorizationService: PrincipalAuthorizationService,
     private readonly accessControlService: AccessControlService,
     private readonly auditService: AuditService,
     private readonly transactionManagerService: TransactionManagerService,
+    private readonly sessionContextService: SessionContextService,
     private readonly sessionsService: SessionsService,
   ) {}
 
@@ -61,10 +59,11 @@ export class OrganizationsService {
           principal.sub,
           session,
         );
-        await this.authSessionModel.updateOne(
-          { _id: principal.sessionId },
-          { $set: { activeOrganizationId: created.id } },
-          { session },
+        await this.sessionContextService.setActiveOrganizationForHumanSession(
+          principal.sessionId,
+          principal.sub,
+          created.id,
+          session,
         );
         await this.auditService.record(
           {
@@ -97,7 +96,9 @@ export class OrganizationsService {
 
   async listAccessibleOrganizations(principal: AuthenticatedPrincipal) {
     const organizationIds =
-      await this.accessControlService.listOrganizationsForUser(principal.sub);
+      await this.principalAuthorizationService.listOrganizationsForUser(
+        principal.sub,
+      );
     const organizations = await this.organizationModel
       .find({ _id: { $in: organizationIds } })
       .sort({ name: 1 });
@@ -107,6 +108,75 @@ export class OrganizationsService {
       name: organization.name,
       status: organization.status,
     }));
+  }
+
+  async activateOrganization(
+    principal: AuthenticatedPrincipal,
+    organizationId: string,
+  ) {
+    const organization = await this.transactionManagerService.runInTransaction(
+      async (session) => {
+        const organizationIds =
+          await this.principalAuthorizationService.listOrganizationsForUser(
+            principal.sub,
+          );
+        if (!organizationIds.includes(organizationId)) {
+          throw new AppException(
+            403,
+            REASON_CODES.PERMISSION_DENIED,
+            'Organization is not accessible for this user',
+          );
+        }
+
+        const activeOrganization = await this.findOrganizationById(
+          organizationId,
+          session,
+        );
+        if (!activeOrganization || activeOrganization.status !== 'ACTIVE') {
+          throw new AppException(
+            404,
+            REASON_CODES.RESOURCE_NOT_FOUND,
+            'Organization was not found',
+          );
+        }
+
+        await this.sessionContextService.setActiveOrganizationForHumanSession(
+          principal.sessionId,
+          principal.sub,
+          activeOrganization.id,
+          session,
+        );
+
+        await this.auditService.record(
+          {
+            actorType: principal.principalType,
+            actorId: principal.sub,
+            actorSessionId: principal.sessionId,
+            organizationId: activeOrganization.id,
+            action: 'organization.activate',
+            resourceType: 'ORGANIZATION',
+            resourceId: activeOrganization.id,
+          },
+          session,
+        );
+
+        return activeOrganization;
+      },
+    );
+
+    const reissued = await this.sessionsService.reissueAccessTokenForSession(
+      principal.sessionId,
+    );
+
+    return {
+      accessToken: reissued.accessToken,
+      activeOrganization: {
+        id: organization.id,
+        key: organization.key,
+        name: organization.name,
+        status: organization.status,
+      },
+    };
   }
 
   async findOrganizationById(organizationId: string, session?: ClientSession) {

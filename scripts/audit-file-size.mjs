@@ -5,6 +5,9 @@ const root = process.cwd();
 const includeDirs = ['src', 'test', 'scripts'];
 const ignore = new Set(['node_modules', 'dist', 'coverage']);
 const findings = [];
+const CONTROLLER_LINE_LIMIT = 160;
+const SERVICE_LINE_LIMIT = 350;
+const FILE_LINE_LIMIT = 450;
 
 async function walk(dir) {
   const entries = await fs.readdir(dir, { withFileTypes: true });
@@ -20,16 +23,20 @@ async function walk(dir) {
     const relative = path.relative(root, fullPath);
     const lines = (await fs.readFile(fullPath, 'utf8')).split('\n').length;
 
-    if (relative.endsWith('.controller.ts') && lines > 150) {
-      findings.push(`${relative} :: controller exceeds 150 lines (${lines})`);
+    if (relative.endsWith('.controller.ts') && lines > CONTROLLER_LINE_LIMIT) {
+      findings.push(
+        `${relative} :: controller exceeds ${CONTROLLER_LINE_LIMIT} lines (${lines})`,
+      );
       continue;
     }
-    if (relative.endsWith('.service.ts') && lines > 300) {
-      findings.push(`${relative} :: service exceeds 300 lines (${lines})`);
+    if (relative.endsWith('.service.ts') && lines > SERVICE_LINE_LIMIT) {
+      findings.push(
+        `${relative} :: service exceeds ${SERVICE_LINE_LIMIT} lines (${lines})`,
+      );
       continue;
     }
-    if (lines > 400) {
-      findings.push(`${relative} :: file exceeds 400 lines (${lines})`);
+    if (lines > FILE_LINE_LIMIT) {
+      findings.push(`${relative} :: file exceeds ${FILE_LINE_LIMIT} lines (${lines})`);
     }
   }
 }

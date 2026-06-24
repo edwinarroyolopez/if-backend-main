@@ -11,6 +11,7 @@ import {
   ResourceScopeResolver,
 } from 'src/platform/access-control/resource-scope.types';
 import { AuditService } from 'src/platform/audit/audit.service';
+import { TransactionManagerService } from 'src/platform/database/transaction-manager.service';
 import {
   InvoiceRequest,
   InvoiceRequestDocument,
@@ -23,6 +24,7 @@ export class FinanceService implements ResourceScopeResolver, OnModuleInit {
     private readonly invoiceRequestModel: Model<InvoiceRequestDocument>,
     private readonly resourceScopeService: ResourceScopeService,
     private readonly auditService: AuditService,
+    private readonly transactionManagerService: TransactionManagerService,
   ) {}
 
   onModuleInit() {
@@ -68,62 +70,93 @@ export class FinanceService implements ResourceScopeResolver, OnModuleInit {
       currency: string;
     },
   ) {
-    const [invoiceRequest] = await this.invoiceRequestModel.create([
-      {
-        ...input,
-        status: 'REQUESTED',
-        requestedBy: principal.sub,
-      },
-    ]);
-    await this.auditService.record({
-      actorType: principal.principalType,
-      actorId: principal.sub,
-      actorSessionId: principal.sessionId,
-      organizationId: input.organizationId,
-      action: 'finance.invoice.request',
-      resourceType: 'INVOICE',
-      resourceId: invoiceRequest.id,
-      permissionKey: 'finance.invoice.request',
-      after: { status: invoiceRequest.status },
+    return this.transactionManagerService.runInTransaction(async (session) => {
+      const [invoiceRequest] = await this.invoiceRequestModel.create(
+        [
+          {
+            ...input,
+            status: 'REQUESTED',
+            requestedBy: principal.sub,
+          },
+        ],
+        { session },
+      );
+      await this.auditService.record(
+        {
+          actorType: principal.principalType,
+          actorId: principal.sub,
+          actorSessionId: principal.sessionId,
+          organizationId: input.organizationId,
+          action: 'finance.invoice.request',
+          resourceType: 'INVOICE',
+          resourceId: invoiceRequest.id,
+          permissionKey: 'finance.invoice.request',
+          after: { status: invoiceRequest.status },
+        },
+        session,
+      );
+      return invoiceRequest;
     });
-    return invoiceRequest;
+  }
+
+  async listInvoiceRequests(organizationId: string) {
+    const invoiceRequests = await this.invoiceRequestModel
+      .find({ organizationId })
+      .sort({ createdAt: -1, _id: 1 });
+
+    return invoiceRequests.map((invoiceRequest) => ({
+      id: invoiceRequest.id,
+      organizationId: invoiceRequest.organizationId,
+      projectId: invoiceRequest.projectId,
+      clientId: invoiceRequest.clientId,
+      key: invoiceRequest.key,
+      amountCents: invoiceRequest.amountCents,
+      currency: invoiceRequest.currency,
+      status: invoiceRequest.status,
+    }));
   }
 
   async approveInvoice(
     principal: AuthenticatedPrincipal,
     invoiceRequestId: string,
   ) {
-    const invoiceRequest =
-      await this.invoiceRequestModel.findById(invoiceRequestId);
-    if (!invoiceRequest) {
-      throw new AppException(
-        404,
-        REASON_CODES.RESOURCE_NOT_FOUND,
-        'Invoice request was not found',
-      );
-    }
-    if (invoiceRequest.requestedBy === principal.sub) {
-      throw new AppException(
-        403,
-        REASON_CODES.PERMISSION_DENIED,
-        'Requester cannot self-approve invoice',
-      );
-    }
+    return this.transactionManagerService.runInTransaction(async (session) => {
+      const invoiceRequest = await this.invoiceRequestModel
+        .findById(invoiceRequestId)
+        .session(session);
+      if (!invoiceRequest) {
+        throw new AppException(
+          404,
+          REASON_CODES.RESOURCE_NOT_FOUND,
+          'Invoice request was not found',
+        );
+      }
+      if (invoiceRequest.requestedBy === principal.sub) {
+        throw new AppException(
+          403,
+          REASON_CODES.PERMISSION_DENIED,
+          'Requester cannot self-approve invoice',
+        );
+      }
 
-    invoiceRequest.status = 'APPROVED';
-    invoiceRequest.approvedBy = principal.sub;
-    await invoiceRequest.save();
-    await this.auditService.record({
-      actorType: principal.principalType,
-      actorId: principal.sub,
-      actorSessionId: principal.sessionId,
-      organizationId: invoiceRequest.organizationId,
-      action: 'finance.invoice.approve',
-      resourceType: 'INVOICE',
-      resourceId: invoiceRequest.id,
-      permissionKey: 'finance.invoice.approve',
-      after: { status: invoiceRequest.status },
+      invoiceRequest.status = 'APPROVED';
+      invoiceRequest.approvedBy = principal.sub;
+      await invoiceRequest.save({ session });
+      await this.auditService.record(
+        {
+          actorType: principal.principalType,
+          actorId: principal.sub,
+          actorSessionId: principal.sessionId,
+          organizationId: invoiceRequest.organizationId,
+          action: 'finance.invoice.approve',
+          resourceType: 'INVOICE',
+          resourceId: invoiceRequest.id,
+          permissionKey: 'finance.invoice.approve',
+          after: { status: invoiceRequest.status },
+        },
+        session,
+      );
+      return invoiceRequest;
     });
-    return invoiceRequest;
   }
 }

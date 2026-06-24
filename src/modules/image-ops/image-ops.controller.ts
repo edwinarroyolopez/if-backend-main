@@ -56,7 +56,7 @@ export class ImageOpsController {
   }
 
   @Get('media-batches')
-  @RequirePermission('image.media_batch.ingest')
+  @RequirePermission('image.media_batch.read')
   @ResolveResource({ type: 'MODULE', moduleKey: 'image' })
   async listMediaBatches(
     @CurrentPrincipal() principal: AuthenticatedPrincipal,
@@ -70,7 +70,11 @@ export class ImageOpsController {
 
   @Post('samples')
   @RequirePermission('image.sample.approve')
-  @ResolveResource({ type: 'MODULE', moduleKey: 'image' })
+  @ResolveResource({
+    type: 'MEDIA_BATCH',
+    bodyField: 'mediaBatchId',
+    moduleKey: 'image',
+  })
   async createSample(
     @CurrentPrincipal() principal: AuthenticatedPrincipal,
     @Body() dto: CreateSampleDto,
@@ -81,7 +85,7 @@ export class ImageOpsController {
 
   @Post('samples/:sampleId/approve')
   @RequirePermission('image.sample.approve')
-  @ResolveResource({ type: 'MODULE', moduleKey: 'image' })
+  @ResolveResource({ type: 'SAMPLE', param: 'sampleId', moduleKey: 'image' })
   async approveSample(
     @CurrentPrincipal() principal: AuthenticatedPrincipal,
     @Param('sampleId') sampleId: string,

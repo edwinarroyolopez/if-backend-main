@@ -40,6 +40,7 @@ export const SCOPE_TYPES = [
   'CLIENT',
   'MISSION',
   'MEDIA_BATCH',
+  'SAMPLE',
   'DELIVERABLE',
   'INVOICE',
   'ENVIRONMENT',

@@ -3,7 +3,6 @@ import { InjectModel } from '@nestjs/mongoose';
 import { ClientSession, Model } from 'mongoose';
 import { AppException } from 'src/common/errors/app-exception';
 import { REASON_CODES } from 'src/common/errors/reason-codes';
-import { AuthenticatedPrincipal } from 'src/common/types/authenticated-principal';
 import { RoleAssignmentStatus } from 'src/common/types/domain.types';
 import { IdentityService } from 'src/platform/identity/identity.service';
 import { AccessPolicy, AccessPolicyDocument } from './access-policy.schema';
@@ -12,6 +11,7 @@ import {
   PermissionDefinitionDocument,
 } from './permission-definition.schema';
 import {
+  DEFAULT_BOOTSTRAP_ROLE_KEY,
   DEFAULT_ORG_ROLE_TEMPLATES,
   PERMISSION_REGISTRY,
   parsePermissionKey,
@@ -57,6 +57,7 @@ export class AccessControlService implements OnModuleInit {
     const permissions = await this.permissionDefinitionModel
       .find({ status: 'ACTIVE' })
       .sort({ key: 1 });
+
     return permissions.map((permission) => ({
       id: permission.id,
       key: permission.key,
@@ -65,6 +66,88 @@ export class AccessControlService implements OnModuleInit {
       actionKey: permission.actionKey,
       description: permission.description,
     }));
+  }
+
+  async listRoles(organizationId: string) {
+    const roles = await this.roleModel.find({ organizationId }).sort({
+      systemDefined: -1,
+      name: 1,
+    });
+    const roleIds = roles.map((role) => role.id);
+    const rolePermissions =
+      roleIds.length > 0
+        ? await this.rolePermissionModel.find({ roleId: { $in: roleIds } })
+        : [];
+    const permissionIds = rolePermissions.map(
+      (rolePermission) => rolePermission.permissionId,
+    );
+    const permissions =
+      permissionIds.length > 0
+        ? await this.permissionDefinitionModel.find({
+            _id: { $in: permissionIds },
+          })
+        : [];
+
+    const permissionKeyById = new Map(
+      permissions.map((permission) => [permission.id, permission.key]),
+    );
+    const permissionKeysByRoleId = new Map<string, string[]>();
+    for (const rolePermission of rolePermissions) {
+      const permissionKey = permissionKeyById.get(rolePermission.permissionId);
+      if (!permissionKey) {
+        continue;
+      }
+
+      const existing = permissionKeysByRoleId.get(rolePermission.roleId) ?? [];
+      existing.push(permissionKey);
+      permissionKeysByRoleId.set(rolePermission.roleId, existing);
+    }
+
+    return roles.map((role) => ({
+      id: role.id,
+      organizationId: role.organizationId,
+      key: role.key,
+      name: role.name,
+      status: role.status,
+      version: role.version,
+      systemDefined: role.systemDefined,
+      permissionKeys: (permissionKeysByRoleId.get(role.id) ?? []).sort(),
+    }));
+  }
+
+  async listRoleAssignments(organizationId: string) {
+    const assignments = await this.roleAssignmentModel
+      .find({ organizationId })
+      .sort({ createdAt: -1 });
+    const roleIds = [
+      ...new Set(assignments.map((assignment) => assignment.roleId)),
+    ];
+    const roles =
+      roleIds.length > 0
+        ? await this.roleModel.find({ _id: { $in: roleIds } })
+        : [];
+    const roleById = new Map(roles.map((role) => [role.id, role]));
+
+    return assignments.map((assignment) => {
+      const role = roleById.get(assignment.roleId);
+
+      return {
+        id: assignment.id,
+        organizationId: assignment.organizationId,
+        principalType: assignment.principalType,
+        principalId: assignment.principalId,
+        roleId: assignment.roleId,
+        roleKey: role?.key,
+        roleName: role?.name,
+        scopeType: assignment.scopeType,
+        scopeId: assignment.scopeId,
+        status: assignment.status,
+        validFrom: assignment.validFrom?.toISOString(),
+        validTo: assignment.validTo?.toISOString(),
+        assignedBy: assignment.assignedBy,
+        createdAt: assignment.createdAt.toISOString(),
+      };
+    });
   }
 
   async createRole(
@@ -85,6 +168,7 @@ export class AccessControlService implements OnModuleInit {
       ],
       { session },
     );
+
     return role;
   }
 
@@ -119,7 +203,7 @@ export class AccessControlService implements OnModuleInit {
         roleId,
         permissionId: permission.id,
       })),
-      { session },
+      { session, ordered: true },
     );
     role.version += 1;
     await role.save({ session });
@@ -161,6 +245,7 @@ export class AccessControlService implements OnModuleInit {
         session,
       );
     }
+
     return assignment;
   }
 
@@ -182,7 +267,7 @@ export class AccessControlService implements OnModuleInit {
         session,
       );
       await this.assignPermissionsToRole(role.id, [...permissionKeys], session);
-      if (roleKey === 'ORG_ADMIN') {
+      if (roleKey === DEFAULT_BOOTSTRAP_ROLE_KEY) {
         await this.assignRoleToPrincipal(
           {
             organizationId,
@@ -197,146 +282,6 @@ export class AccessControlService implements OnModuleInit {
         );
       }
     }
-  }
-
-  async getEffectiveAuthorizationVersionForUser(
-    userId: string,
-  ): Promise<number> {
-    const [user, assignments, globalPolicy] = await Promise.all([
-      this.identityService.findUserById(userId),
-      this.roleAssignmentModel.find({
-        principalType: 'USER',
-        principalId: userId,
-        status: 'ACTIVE',
-      }),
-      this.accessPolicyModel.findOne({ key: 'GLOBAL' }),
-    ]);
-
-    if (!user) {
-      throw new AppException(
-        404,
-        REASON_CODES.RESOURCE_NOT_FOUND,
-        'User was not found',
-      );
-    }
-
-    const roleIds = assignments.map((assignment) => assignment.roleId);
-    const roles =
-      roleIds.length > 0
-        ? await this.roleModel.find({ _id: { $in: roleIds } })
-        : [];
-    return Math.max(
-      user.authorizationVersion,
-      globalPolicy?.version ?? 1,
-      ...roles.map((role) => role.version),
-    );
-  }
-
-  async getEffectiveAuthorizationVersionForServiceAccount(
-    serviceAccountId: string,
-    currentAuthorizationVersion: number,
-  ): Promise<number> {
-    const [assignments, globalPolicy] = await Promise.all([
-      this.roleAssignmentModel.find({
-        principalType: 'SERVICE_ACCOUNT',
-        principalId: serviceAccountId,
-        status: 'ACTIVE',
-      }),
-      this.accessPolicyModel.findOne({ key: 'GLOBAL' }),
-    ]);
-    const roleIds = assignments.map((assignment) => assignment.roleId);
-    const roles =
-      roleIds.length > 0
-        ? await this.roleModel.find({ _id: { $in: roleIds } })
-        : [];
-    return Math.max(
-      currentAuthorizationVersion,
-      globalPolicy?.version ?? 1,
-      ...roles.map((role) => role.version),
-    );
-  }
-
-  async can(
-    principal: AuthenticatedPrincipal,
-    permissionKey: string,
-    scopeContext: ResourceScopeContext,
-  ): Promise<boolean> {
-    if (
-      !principal.activeOrganizationId ||
-      principal.activeOrganizationId !== scopeContext.organizationId
-    ) {
-      return false;
-    }
-
-    const assignments = await this.roleAssignmentModel.find({
-      organizationId: scopeContext.organizationId,
-      principalType: principal.principalType,
-      principalId: principal.sub,
-      status: 'ACTIVE',
-    });
-    if (assignments.length === 0) {
-      return false;
-    }
-
-    const now = Date.now();
-    const activeAssignments = assignments.filter((assignment) => {
-      if (assignment.validFrom && assignment.validFrom.getTime() > now) {
-        return false;
-      }
-      if (assignment.validTo && assignment.validTo.getTime() <= now) {
-        return false;
-      }
-      return scopeContext.candidateScopes.some(
-        (scope) =>
-          scope.type === assignment.scopeType &&
-          scope.id === assignment.scopeId,
-      );
-    });
-    if (activeAssignments.length === 0) {
-      return false;
-    }
-
-    const roleIds = [
-      ...new Set(activeAssignments.map((assignment) => assignment.roleId)),
-    ];
-    const [roles, rolePermissions] = await Promise.all([
-      this.roleModel.find({ _id: { $in: roleIds }, status: 'ACTIVE' }),
-      this.rolePermissionModel.find({ roleId: { $in: roleIds } }),
-    ]);
-    if (roles.length === 0 || rolePermissions.length === 0) {
-      return false;
-    }
-
-    const permissionIds = rolePermissions.map(
-      (rolePermission) => rolePermission.permissionId,
-    );
-    const permissions = await this.permissionDefinitionModel.find({
-      _id: { $in: permissionIds },
-      key: permissionKey,
-    });
-    return permissions.length > 0;
-  }
-
-  async resolvePrimaryOrganizationForUser(
-    userId: string,
-  ): Promise<string | undefined> {
-    const assignment = await this.roleAssignmentModel.findOne({
-      principalType: 'USER',
-      principalId: userId,
-      status: 'ACTIVE',
-    });
-    return assignment?.organizationId;
-  }
-
-  async listOrganizationsForUser(userId: string): Promise<string[]> {
-    const assignments = await this.roleAssignmentModel.find({
-      principalType: 'USER',
-      principalId: userId,
-      status: 'ACTIVE',
-    });
-    return [
-      ...new Set(assignments.map((assignment) => assignment.organizationId)),
-    ];
   }
 
   private async seedPermissions() {

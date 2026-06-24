@@ -22,6 +22,11 @@ export class AuthController {
     return this.sessionsService.me(principal);
   }
 
+  @Get('capabilities')
+  async capabilities(@CurrentPrincipal() principal: AuthenticatedPrincipal) {
+    return this.sessionsService.capabilities(principal);
+  }
+
   @Get('sessions')
   async listSessions(@CurrentPrincipal() principal: AuthenticatedPrincipal) {
     return { items: await this.sessionsService.listSessions(principal) };

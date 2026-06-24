@@ -36,6 +36,9 @@ export class OutboxEvent {
   @Prop({ type: String })
   lastError?: string;
 
+  @Prop({ type: Date })
+  processingStartedAt?: Date;
+
   @Prop({ type: String, index: true })
   correlationId?: string;
 

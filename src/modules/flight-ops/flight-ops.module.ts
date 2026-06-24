@@ -5,6 +5,7 @@ import { AuditModule } from 'src/platform/audit/audit.module';
 import { TransactionManagerService } from 'src/platform/database/transaction-manager.service';
 import { EventsModule } from 'src/platform/events/events.module';
 import { IdempotencyModule } from 'src/platform/idempotency/idempotency.module';
+import { ProjectsModule } from 'src/modules/projects/projects.module';
 import { FlightOpsController } from './flight-ops.controller';
 import { FlightOpsService } from './flight-ops.service';
 import { Mission, MissionSchema } from './mission.schema';
@@ -15,6 +16,7 @@ import { Mission, MissionSchema } from './mission.schema';
     AuditModule,
     EventsModule,
     IdempotencyModule,
+    ProjectsModule,
     MongooseModule.forFeature([{ name: Mission.name, schema: MissionSchema }]),
   ],
   controllers: [FlightOpsController],

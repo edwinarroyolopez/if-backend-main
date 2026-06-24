@@ -51,6 +51,9 @@ export class RoleAssignment {
 
   @Prop({ type: String, required: true })
   assignedBy!: string;
+
+  createdAt!: Date;
+  updatedAt!: Date;
 }
 
 export const RoleAssignmentSchema =

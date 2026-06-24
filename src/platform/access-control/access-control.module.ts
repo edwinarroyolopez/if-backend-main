@@ -1,5 +1,6 @@
 import { Module } from '@nestjs/common';
 import { MongooseModule } from '@nestjs/mongoose';
+import { TransactionManagerService } from 'src/platform/database/transaction-manager.service';
 import { AccessControlController } from './access-control.controller';
 import { AccessControlService } from './access-control.service';
 import { AccessPolicy, AccessPolicySchema } from './access-policy.schema';
@@ -8,6 +9,7 @@ import {
   PermissionDefinition,
   PermissionDefinitionSchema,
 } from './permission-definition.schema';
+import { PrincipalAuthorizationService } from './principal-authorization.service';
 import { ReadOnlySessionGuard } from './read-only-session.guard';
 import { ResourceScopeService } from './resource-scope.service';
 import { RoleAssignment, RoleAssignmentSchema } from './role-assignment.schema';
@@ -29,12 +31,15 @@ import { IdentityModule } from 'src/platform/identity/identity.module';
   controllers: [AccessControlController],
   providers: [
     AccessControlService,
+    PrincipalAuthorizationService,
+    TransactionManagerService,
     ResourceScopeService,
     PermissionGuard,
     ReadOnlySessionGuard,
   ],
   exports: [
     AccessControlService,
+    PrincipalAuthorizationService,
     ResourceScopeService,
     PermissionGuard,
     ReadOnlySessionGuard,

@@ -1,4 +1,4 @@
-import { Body, Controller, Param, Post, UseGuards } from '@nestjs/common';
+import { Body, Controller, Get, Param, Post, UseGuards } from '@nestjs/common';
 import { IsMongoId, IsString, MaxLength, MinLength } from 'class-validator';
 import { CurrentPrincipal } from 'src/platform/access-control/current-principal.decorator';
 import { PermissionGuard } from 'src/platform/access-control/permission.guard';
@@ -33,6 +33,19 @@ class CreateDeliverableDto {
 @UseGuards(JwtAuthGuard, ReadOnlySessionGuard, PermissionGuard)
 export class DeliverablesController {
   constructor(private readonly deliverablesService: DeliverablesService) {}
+
+  @Get()
+  @RequirePermission('deliverables.deliverable.read')
+  @ResolveResource({ type: 'MODULE', moduleKey: 'deliverables' })
+  async listDeliverables(
+    @CurrentPrincipal() principal: AuthenticatedPrincipal,
+  ) {
+    return {
+      items: await this.deliverablesService.listDeliverables(
+        principal.activeOrganizationId!,
+      ),
+    };
+  }
 
   @Post()
   @RequirePermission('deliverables.deliverable.create')

@@ -11,6 +11,9 @@ export type AuthSessionDocument = HydratedDocument<AuthSession>;
 
 @Schema({ collection: 'auth_sessions', timestamps: true })
 export class AuthSession {
+  @Prop({ type: String })
+  _id!: string;
+
   @Prop({ type: String, enum: PRINCIPAL_TYPES, required: true, index: true })
   principalType!: PrincipalType;
 
@@ -31,6 +34,9 @@ export class AuthSession {
 
   @Prop({ type: Number, required: true, index: true })
   authorizationVersion!: number;
+
+  @Prop({ type: String, index: true })
+  authorizationFingerprint?: string;
 
   @Prop({ type: Date, required: true, index: true })
   expiresAt!: Date;

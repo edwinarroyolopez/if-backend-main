@@ -1,78 +1,20 @@
 import { Body, Controller, Get, Param, Post, UseGuards } from '@nestjs/common';
-import {
-  IsIn,
-  IsMongoId,
-  IsString,
-  MaxLength,
-  MinLength,
-} from 'class-validator';
 import { CurrentPrincipal } from './current-principal.decorator';
 import {
   RequirePermission,
   ResolveResource,
 } from './access-control.decorators';
+import {
+  AssignPermissionsDto,
+  CreateRoleAssignmentDto,
+  CreateRoleDto,
+} from './access-control.dto';
 import { AccessControlService } from './access-control.service';
 import { AuthenticatedPrincipal } from 'src/common/types/authenticated-principal';
 import { ReadOnlySessionGuard } from './read-only-session.guard';
 import { PermissionGuard } from './permission.guard';
 import { JwtAuthGuard } from 'src/platform/sessions/jwt-auth.guard';
 import { TransactionManagerService } from 'src/platform/database/transaction-manager.service';
-
-class CreateRoleDto {
-  @IsString()
-  organizationId!: string;
-
-  @IsString()
-  @MinLength(3)
-  @MaxLength(64)
-  key!: string;
-
-  @IsString()
-  @MinLength(3)
-  @MaxLength(120)
-  name!: string;
-}
-
-class AssignPermissionsDto {
-  @IsString({ each: true })
-  permissionKeys!: string[];
-}
-
-class CreateRoleAssignmentDto {
-  @IsString()
-  organizationId!: string;
-
-  @IsMongoId()
-  principalId!: string;
-
-  @IsMongoId()
-  roleId!: string;
-
-  @IsIn([
-    'ORGANIZATION',
-    'MODULE',
-    'PROJECT',
-    'CLIENT',
-    'MISSION',
-    'MEDIA_BATCH',
-    'DELIVERABLE',
-    'INVOICE',
-    'ENVIRONMENT',
-  ])
-  scopeType!:
-    | 'ORGANIZATION'
-    | 'MODULE'
-    | 'PROJECT'
-    | 'CLIENT'
-    | 'MISSION'
-    | 'MEDIA_BATCH'
-    | 'DELIVERABLE'
-    | 'INVOICE'
-    | 'ENVIRONMENT';
-
-  @IsString()
-  scopeId!: string;
-}
 
 @Controller()
 @UseGuards(JwtAuthGuard, ReadOnlySessionGuard, PermissionGuard)
@@ -85,6 +27,30 @@ export class AccessControlController {
   @Get('permissions')
   async listPermissions() {
     return { items: await this.accessControlService.listPermissions() };
+  }
+
+  @Get('roles')
+  @RequirePermission('admin.role.read')
+  @ResolveResource({ type: 'MODULE', moduleKey: 'admin' })
+  async listRoles(@CurrentPrincipal() principal: AuthenticatedPrincipal) {
+    return {
+      items: await this.accessControlService.listRoles(
+        principal.activeOrganizationId!,
+      ),
+    };
+  }
+
+  @Get('role-assignments')
+  @RequirePermission('admin.role_assignment.read')
+  @ResolveResource({ type: 'MODULE', moduleKey: 'admin' })
+  async listRoleAssignments(
+    @CurrentPrincipal() principal: AuthenticatedPrincipal,
+  ) {
+    return {
+      items: await this.accessControlService.listRoleAssignments(
+        principal.activeOrganizationId!,
+      ),
+    };
   }
 
   @Post('roles')

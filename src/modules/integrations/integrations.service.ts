@@ -2,19 +2,20 @@ import { randomBytes, randomUUID } from 'node:crypto';
 import { Injectable } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { InjectModel } from '@nestjs/mongoose';
-import { JwtService } from '@nestjs/jwt';
 import { Model } from 'mongoose';
 import argon2 from 'argon2';
 import { AppException } from 'src/common/errors/app-exception';
 import { REASON_CODES } from 'src/common/errors/reason-codes';
 import { AuthenticatedPrincipal } from 'src/common/types/authenticated-principal';
+import { PrincipalAuthorizationService } from 'src/platform/access-control/principal-authorization.service';
+import { AccessControlService } from 'src/platform/access-control/access-control.service';
 import { AuditService } from 'src/platform/audit/audit.service';
 import { TransactionManagerService } from 'src/platform/database/transaction-manager.service';
-import { AccessControlService } from 'src/platform/access-control/access-control.service';
 import {
-  AuthSession,
-  AuthSessionDocument,
-} from 'src/platform/sessions/auth-session.schema';
+  ServicePrincipalLookup,
+  ServicePrincipalRecord,
+} from 'src/platform/sessions/service-principal-lookup.port';
+import { TechnicalSessionIssuerService } from 'src/platform/sessions/technical-session-issuer.service';
 import {
   ServiceAccount,
   ServiceAccountDocument,
@@ -24,21 +25,18 @@ import {
   ServiceCredentialDocument,
 } from './service-credential.schema';
 
-type DurationExpression = `${number}${'ms' | 's' | 'm' | 'h' | 'd'}`;
-
 @Injectable()
-export class IntegrationsService {
+export class IntegrationsService implements ServicePrincipalLookup {
   constructor(
     @InjectModel(ServiceAccount.name)
     private readonly serviceAccountModel: Model<ServiceAccountDocument>,
     @InjectModel(ServiceCredential.name)
     private readonly serviceCredentialModel: Model<ServiceCredentialDocument>,
-    @InjectModel(AuthSession.name)
-    private readonly authSessionModel: Model<AuthSessionDocument>,
     private readonly transactionManagerService: TransactionManagerService,
     private readonly accessControlService: AccessControlService,
+    private readonly principalAuthorizationService: PrincipalAuthorizationService,
     private readonly auditService: AuditService,
-    private readonly jwtService: JwtService,
+    private readonly technicalSessionIssuerService: TechnicalSessionIssuerService,
     private readonly configService: ConfigService,
   ) {}
 
@@ -53,6 +51,16 @@ export class IntegrationsService {
       roleId: string;
     },
   ) {
+    const apiAudience =
+      this.configService.getOrThrow<string>('app.jwtAudience');
+    if (!input.allowedAudiences.includes(apiAudience)) {
+      throw new AppException(
+        422,
+        REASON_CODES.VALIDATION_FAILED,
+        'Service account must allow the API audience',
+      );
+    }
+
     const clientSecret = randomBytes(24).toString('hex');
 
     return this.transactionManagerService.runInTransaction(async (session) => {
@@ -127,10 +135,34 @@ export class IntegrationsService {
   ) {
     const clientSecret = randomBytes(24).toString('hex');
     return this.transactionManagerService.runInTransaction(async (session) => {
+      const serviceAccount =
+        await this.serviceAccountModel.findById(serviceAccountId);
+      if (!serviceAccount) {
+        throw new AppException(
+          404,
+          REASON_CODES.RESOURCE_NOT_FOUND,
+          'Service account was not found',
+        );
+      }
+      if (serviceAccount.organizationId !== principal.activeOrganizationId) {
+        throw new AppException(
+          403,
+          REASON_CODES.PERMISSION_DENIED,
+          'Service account is outside the active organization',
+        );
+      }
+
       await this.serviceCredentialModel.updateMany(
         { serviceAccountId, status: 'ACTIVE' },
         { $set: { status: 'REVOKED' } },
         { session },
+      );
+      serviceAccount.sessionVersion += 1;
+      await serviceAccount.save({ session });
+      await this.technicalSessionIssuerService.revokeServiceAccountSessions(
+        serviceAccountId,
+        'CREDENTIAL_ROTATED',
+        session,
       );
 
       const keyId = randomUUID();
@@ -151,10 +183,12 @@ export class IntegrationsService {
           actorType: principal.principalType,
           actorId: principal.sub,
           actorSessionId: principal.sessionId,
+          organizationId: serviceAccount.organizationId,
           action: 'integrations.service_account.rotate',
           resourceType: 'SERVICE_ACCOUNT',
           resourceId: serviceAccountId,
           permissionKey: 'integrations.service_account.rotate',
+          after: { sessionVersion: serviceAccount.sessionVersion },
         },
         session,
       );
@@ -167,6 +201,16 @@ export class IntegrationsService {
     clientSecret: string;
     audience: string;
   }) {
+    const apiAudience =
+      this.configService.getOrThrow<string>('app.jwtAudience');
+    if (input.audience !== apiAudience) {
+      throw new AppException(
+        403,
+        REASON_CODES.PERMISSION_DENIED,
+        'Audience is not allowed for this API',
+      );
+    }
+
     const credential = await this.serviceCredentialModel
       .findOne({ keyId: input.keyId, status: 'ACTIVE' })
       .select('+credentialHash');
@@ -199,7 +243,7 @@ export class IntegrationsService {
         'Service account is not active',
       );
     }
-    if (!serviceAccount.allowedAudiences.includes(input.audience)) {
+    if (!serviceAccount.allowedAudiences.includes(apiAudience)) {
       throw new AppException(
         403,
         REASON_CODES.PERMISSION_DENIED,
@@ -207,65 +251,67 @@ export class IntegrationsService {
       );
     }
 
-    const authorizationVersion =
-      await this.accessControlService.getEffectiveAuthorizationVersionForServiceAccount(
-        serviceAccount.id,
-        serviceAccount.authorizationVersion,
-      );
-    const sessionId = randomUUID();
-    await this.authSessionModel.create([
-      {
-        _id: sessionId,
-        principalType: 'SERVICE_ACCOUNT',
-        serviceAccountId: serviceAccount.id,
-        sessionKind: 'SERVICE_ACCOUNT',
-        sessionVersion: serviceAccount.sessionVersion,
-        authorizationVersion,
-        expiresAt: new Date(Date.now() + 15 * 60 * 1000),
-        readOnly: false,
-        activeOrganizationId: serviceAccount.organizationId,
-      },
-    ]);
-
-    await this.serviceCredentialModel.updateOne(
-      { _id: credential.id },
-      { $set: { lastUsedAt: new Date() } },
-    );
-    await this.auditService.record({
-      actorType: 'SERVICE_ACCOUNT',
-      actorId: serviceAccount.id,
-      actorSessionId: sessionId,
-      organizationId: serviceAccount.organizationId,
-      action: 'integrations.service_account.token',
-      resourceType: 'SERVICE_ACCOUNT',
-      resourceId: serviceAccount.id,
-    });
-
-    const expiresIn = this.configService.getOrThrow<string>(
-      'app.jwtAccessTtl',
-    ) as DurationExpression;
-    return {
-      accessToken: this.jwtService.sign(
-        {
-          sub: serviceAccount.id,
-          principalType: 'SERVICE_ACCOUNT',
-          sessionId,
+    return this.transactionManagerService.runInTransaction(async (session) => {
+      const authorizationContext =
+        await this.principalAuthorizationService.getServiceAccountAuthorizationContext(
+          {
+            serviceAccountId: serviceAccount.id,
+            authorizationVersion: serviceAccount.authorizationVersion,
+            activeOrganizationId: serviceAccount.organizationId,
+          },
+        );
+      const issued =
+        await this.technicalSessionIssuerService.issueServiceAccountSession({
+          serviceAccountId: serviceAccount.id,
           sessionVersion: serviceAccount.sessionVersion,
-          authorizationVersion,
-          sessionKind: 'SERVICE_ACCOUNT',
-          readOnly: false,
+          authorizationVersion: authorizationContext.authorizationVersion,
+          authorizationFingerprint:
+            authorizationContext.authorizationFingerprint,
           activeOrganizationId: serviceAccount.organizationId,
-        },
+          session,
+        });
+
+      await this.serviceCredentialModel.updateOne(
+        { _id: credential.id },
+        { $set: { lastUsedAt: new Date() } },
+        { session },
+      );
+      await this.auditService.record(
         {
-          secret: this.configService.getOrThrow<string>('app.jwtAccessSecret'),
-          issuer: this.configService.getOrThrow<string>('app.jwtIssuer'),
-          audience: input.audience,
-          algorithm: 'HS256',
-          expiresIn,
-          jwtid: randomUUID(),
+          actorType: 'SERVICE_ACCOUNT',
+          actorId: serviceAccount.id,
+          actorSessionId: issued.sessionId,
+          organizationId: serviceAccount.organizationId,
+          action: 'integrations.service_account.token',
+          resourceType: 'SERVICE_ACCOUNT',
+          resourceId: serviceAccount.id,
         },
-      ),
-      sessionId,
+        session,
+      );
+
+      return {
+        accessToken: issued.accessToken,
+        sessionId: issued.sessionId,
+      };
+    });
+  }
+
+  async findServicePrincipalById(
+    serviceAccountId: string,
+  ): Promise<ServicePrincipalRecord | null> {
+    const serviceAccount =
+      await this.serviceAccountModel.findById(serviceAccountId);
+    if (!serviceAccount) {
+      return null;
+    }
+
+    return {
+      id: serviceAccount.id,
+      organizationId: serviceAccount.organizationId,
+      status: serviceAccount.status,
+      sessionVersion: serviceAccount.sessionVersion,
+      authorizationVersion: serviceAccount.authorizationVersion,
+      allowedAudiences: [...serviceAccount.allowedAudiences],
     };
   }
 

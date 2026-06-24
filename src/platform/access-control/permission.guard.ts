@@ -4,18 +4,18 @@ import { Request } from 'express';
 import { AppException } from 'src/common/errors/app-exception';
 import { REASON_CODES } from 'src/common/errors/reason-codes';
 import { AuthenticatedPrincipal } from 'src/common/types/authenticated-principal';
-import { AccessControlService } from './access-control.service';
 import {
   REQUIRE_PERMISSION_KEY,
   RESOLVE_RESOURCE_KEY,
 } from './access-control.decorators';
+import { PrincipalAuthorizationService } from './principal-authorization.service';
 import { ResourceScopeService } from './resource-scope.service';
 
 @Injectable()
 export class PermissionGuard implements CanActivate {
   constructor(
     private readonly reflector: Reflector,
-    private readonly accessControlService: AccessControlService,
+    private readonly principalAuthorizationService: PrincipalAuthorizationService,
     private readonly resourceScopeService: ResourceScopeService,
   ) {}
 
@@ -50,7 +50,7 @@ export class PermissionGuard implements CanActivate {
       request,
       resourceOptions,
     );
-    const allowed = await this.accessControlService.can(
+    const allowed = await this.principalAuthorizationService.can(
       request.user,
       permissionKey,
       scope,

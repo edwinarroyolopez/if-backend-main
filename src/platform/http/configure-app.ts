@@ -6,7 +6,10 @@ import { INestApplication } from '@nestjs/common';
 import { json, urlencoded } from 'express';
 import { GlobalHttpExceptionFilter } from 'src/common/errors/global-http-exception.filter';
 
-export function configureApp(app: INestApplication, configService: ConfigService) {
+export function configureApp(
+  app: INestApplication,
+  configService: ConfigService,
+) {
   app.setGlobalPrefix('api/v1');
   app.use(helmet());
   app.use(cookieParser());

@@ -1,73 +1,80 @@
 import request from 'supertest';
-import { createOperationalFixtures, createTestContext, registerAndBootstrapOrganization } from './app-test-context';
+import {
+  createOperationalFixtures,
+  createTestContext,
+  registerAndBootstrapOrganization,
+} from './app-test-context';
 
 describe('Inflight backend e2e', () => {
-  it('covers health, auth, permissions, mission completion and service accounts', async () => {
+  it('covers health plus web auth cookie flow', async () => {
     const context = await createTestContext();
 
     try {
-      await request(context.app.getHttpServer()).get('/api/v1/health/live').expect(200);
-      await request(context.app.getHttpServer()).get('/api/v1/health/ready').expect(200);
-
-      const { ownerAccessToken, organizationId } = await registerAndBootstrapOrganization(context);
-
-      await context.agent.get('/api/v1/auth/me').set('Authorization', `Bearer ${ownerAccessToken}`).expect(200);
-
-      const webLogin = await context.agent.post('/api/v1/auth/web/login').send({
-        email: 'owner-login@test.dev',
-        displayName: 'ignored',
-      });
-      void webLogin;
-
-      const nativeRegister = await context.http.post('/api/v1/auth/native/register').send({
-        email: 'member@test.dev',
-        displayName: 'Member User',
-        password: 'MemberPassword123!',
-      });
-
-      const roleResponse = await context.http.post('/api/v1/roles').set('Authorization', `Bearer ${ownerAccessToken}`).send({
-        organizationId,
-        key: 'MISSION_OPERATOR',
-        name: 'Mission Operator',
-      });
-      await context.http
-        .post(`/api/v1/roles/${roleResponse.body.id}/permissions`)
-        .set('Authorization', `Bearer ${ownerAccessToken}`)
-        .send({ permissionKeys: ['flight.mission.read', 'flight.mission.complete'] })
-        .expect(201);
-      await context.http.post('/api/v1/role-assignments').set('Authorization', `Bearer ${ownerAccessToken}`).send({
-        organizationId,
-        principalId: nativeRegister.body.user.id,
-        roleId: roleResponse.body.id,
-        scopeType: 'ORGANIZATION',
-        scopeId: organizationId,
-      }).expect(201);
-
-      const nativeLogin = await context.http.post('/api/v1/auth/native/login').send({
-        email: 'member@test.dev',
-        password: 'MemberPassword123!',
-        activeOrganizationId: organizationId,
-      }).expect(201);
-
-      await context.http
-        .post('/api/v1/clients')
-        .set('Authorization', `Bearer ${ownerAccessToken}`)
-        .send({ organizationId, key: 'client-a', name: 'Client A' })
-        .expect(201);
-
-      const fixtures = await createOperationalFixtures(context, ownerAccessToken, organizationId);
-      await context.http
-        .get(`/api/v1/missions/${fixtures.missionId}`)
-        .set('Authorization', `Bearer ${nativeLogin.body.accessToken}`)
+      await request(context.app.getHttpServer())
+        .get('/api/v1/health/live')
+        .expect(200);
+      await request(context.app.getHttpServer())
+        .get('/api/v1/health/ready')
         .expect(200);
 
-      await context.http
-        .post(`/api/v1/missions/${fixtures.missionId}/complete`)
-        .set('Authorization', `Bearer ${ownerAccessToken}`)
-        .set('Idempotency-Key', 'mission-complete-e2e')
+      const registerResponse = await context.agent
+        .post('/api/v1/auth/web/register')
+        .send({
+          email: 'web-user@test.dev',
+          displayName: 'Web User',
+          password: 'WebPassword123!',
+        })
         .expect(201);
+      expect(registerResponse.headers['set-cookie']).toBeDefined();
+      expect(JSON.stringify(registerResponse.body)).not.toContain(
+        'refreshTokenHash',
+      );
 
-      const orgAdminRole = await context.models.roles.findOne({ organizationId, key: 'ORG_ADMIN' });
+      await context.agent
+        .get('/api/v1/auth/me')
+        .set(
+          'Authorization',
+          `Bearer ${registerResponse.body.accessToken as string}`,
+        )
+        .expect(200);
+
+      const refreshResponse = await context.agent
+        .post('/api/v1/auth/web/refresh')
+        .expect(201);
+      expect(typeof refreshResponse.body.accessToken).toBe('string');
+
+      await context.agent
+        .post('/api/v1/auth/web/logout')
+        .set(
+          'Authorization',
+          `Bearer ${refreshResponse.body.accessToken as string}`,
+        )
+        .expect(201);
+      await context.agent.post('/api/v1/auth/web/refresh').expect(401);
+    } finally {
+      await context.close();
+    }
+  });
+
+  it('issues valid service-account tokens, rejects invalid audience and revokes stale tokens after rotation', async () => {
+    const context = await createTestContext();
+
+    try {
+      const { ownerAccessToken, organizationId } =
+        await registerAndBootstrapOrganization(context, 'svc-e2e');
+      await createOperationalFixtures(
+        context,
+        ownerAccessToken,
+        organizationId,
+        'svc-e2e',
+      );
+
+      const orgAdminRole = await context.models.roles.findOne({
+        organizationId,
+        key: 'ORG_ADMIN',
+      });
+      expect(orgAdminRole).not.toBeNull();
+
       const serviceAccountResponse = await context.http
         .post('/api/v1/service-accounts')
         .set('Authorization', `Bearer ${ownerAccessToken}`)
@@ -81,15 +88,62 @@ describe('Inflight backend e2e', () => {
         })
         .expect(201);
 
-      const serviceTokenResponse = await context.http.post('/api/v1/auth/service/token').send({
-        keyId: serviceAccountResponse.body.keyId,
-        clientSecret: serviceAccountResponse.body.clientSecret,
-        audience: 'inflight-test',
-      }).expect(201);
+      const serviceTokenResponse = await context.http
+        .post('/api/v1/auth/service/token')
+        .send({
+          keyId: serviceAccountResponse.body.keyId as string,
+          clientSecret: serviceAccountResponse.body.clientSecret as string,
+          audience: 'inflight-test',
+        })
+        .expect(201);
 
       await context.http
         .get('/api/v1/projects')
-        .set('Authorization', `Bearer ${serviceTokenResponse.body.accessToken}`)
+        .set(
+          'Authorization',
+          `Bearer ${serviceTokenResponse.body.accessToken as string}`,
+        )
+        .expect(200);
+
+      await context.http
+        .post('/api/v1/auth/service/token')
+        .send({
+          keyId: serviceAccountResponse.body.keyId as string,
+          clientSecret: serviceAccountResponse.body.clientSecret as string,
+          audience: 'wrong-audience',
+        })
+        .expect(403);
+
+      const rotatedCredential = await context.http
+        .post(
+          `/api/v1/service-accounts/${serviceAccountResponse.body.id as string}/rotate-credential`,
+        )
+        .set('Authorization', `Bearer ${ownerAccessToken}`)
+        .expect(201);
+
+      await context.http
+        .get('/api/v1/projects')
+        .set(
+          'Authorization',
+          `Bearer ${serviceTokenResponse.body.accessToken as string}`,
+        )
+        .expect(401);
+
+      const refreshedServiceToken = await context.http
+        .post('/api/v1/auth/service/token')
+        .send({
+          keyId: rotatedCredential.body.keyId as string,
+          clientSecret: rotatedCredential.body.clientSecret as string,
+          audience: 'inflight-test',
+        })
+        .expect(201);
+
+      await context.http
+        .get('/api/v1/projects')
+        .set(
+          'Authorization',
+          `Bearer ${refreshedServiceToken.body.accessToken as string}`,
+        )
         .expect(200);
     } finally {
       await context.close();

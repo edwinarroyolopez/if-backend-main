@@ -1,4 +1,4 @@
-import { Body, Controller, Param, Post, UseGuards } from '@nestjs/common';
+import { Body, Controller, Get, Param, Post, UseGuards } from '@nestjs/common';
 import {
   IsInt,
   IsMongoId,
@@ -47,6 +47,19 @@ class CreateInvoiceRequestDto {
 @UseGuards(JwtAuthGuard, ReadOnlySessionGuard, PermissionGuard)
 export class FinanceController {
   constructor(private readonly financeService: FinanceService) {}
+
+  @Get()
+  @RequirePermission('finance.invoice.read')
+  @ResolveResource({ type: 'MODULE', moduleKey: 'finance' })
+  async listInvoiceRequests(
+    @CurrentPrincipal() principal: AuthenticatedPrincipal,
+  ) {
+    return {
+      items: await this.financeService.listInvoiceRequests(
+        principal.activeOrganizationId!,
+      ),
+    };
+  }
 
   @Post()
   @RequirePermission('finance.invoice.request')

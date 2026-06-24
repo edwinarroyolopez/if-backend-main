@@ -5,6 +5,7 @@ import {
   Headers,
   Param,
   Post,
+  Query,
   UseGuards,
 } from '@nestjs/common';
 import {
@@ -50,10 +51,50 @@ class CreateMissionDto {
   status?: 'DRAFT' | 'PLANNED' | 'READY' | 'IN_PROGRESS';
 }
 
+class ListMissionsQueryDto {
+  @IsOptional()
+  @IsMongoId()
+  projectId?: string;
+
+  @IsOptional()
+  @IsIn([
+    'DRAFT',
+    'PLANNED',
+    'READY',
+    'IN_PROGRESS',
+    'COMPLETED',
+    'CANCELLED',
+    'FAILED',
+  ])
+  status?:
+    | 'DRAFT'
+    | 'PLANNED'
+    | 'READY'
+    | 'IN_PROGRESS'
+    | 'COMPLETED'
+    | 'CANCELLED'
+    | 'FAILED';
+}
+
 @Controller('missions')
 @UseGuards(JwtAuthGuard, ReadOnlySessionGuard, PermissionGuard)
 export class FlightOpsController {
   constructor(private readonly flightOpsService: FlightOpsService) {}
+
+  @Get()
+  @RequirePermission('flight.mission.read')
+  @ResolveResource({ type: 'MODULE', moduleKey: 'flight' })
+  async listMissions(
+    @CurrentPrincipal() principal: AuthenticatedPrincipal,
+    @Query() query: ListMissionsQueryDto,
+  ) {
+    return {
+      items: await this.flightOpsService.listMissions(
+        principal.activeOrganizationId!,
+        query,
+      ),
+    };
+  }
 
   @Post()
   @RequirePermission('flight.mission.create')

@@ -13,6 +13,7 @@ export type AccessTokenPayload = {
   sessionId: string;
   sessionVersion: number;
   authorizationVersion: number;
+  authorizationFingerprint: string;
   sessionKind: SessionKind;
   readOnly: boolean;
   activeOrganizationId?: string;

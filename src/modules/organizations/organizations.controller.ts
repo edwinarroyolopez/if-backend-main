@@ -1,4 +1,4 @@
-import { Body, Controller, Get, Post, UseGuards } from '@nestjs/common';
+import { Body, Controller, Get, Param, Post, UseGuards } from '@nestjs/common';
 import { IsString, MaxLength, MinLength } from 'class-validator';
 import { CurrentPrincipal } from 'src/platform/access-control/current-principal.decorator';
 import { ReadOnlySessionGuard } from 'src/platform/access-control/read-only-session.guard';
@@ -29,6 +29,17 @@ export class OrganizationsController {
     @Body() dto: BootstrapOrganizationDto,
   ) {
     return this.organizationsService.bootstrapOrganization(principal, dto);
+  }
+
+  @Post(':organizationId/activate')
+  async activateOrganization(
+    @CurrentPrincipal() principal: AuthenticatedPrincipal,
+    @Param('organizationId') organizationId: string,
+  ) {
+    return this.organizationsService.activateOrganization(
+      principal,
+      organizationId,
+    );
   }
 
   @Get('me')

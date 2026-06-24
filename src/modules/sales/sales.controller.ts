@@ -1,4 +1,4 @@
-import { Body, Controller, Param, Post, UseGuards } from '@nestjs/common';
+import { Body, Controller, Get, Param, Post, UseGuards } from '@nestjs/common';
 import { IsMongoId, IsString, MaxLength, MinLength } from 'class-validator';
 import { CurrentPrincipal } from 'src/platform/access-control/current-principal.decorator';
 import { PermissionGuard } from 'src/platform/access-control/permission.guard';
@@ -45,6 +45,19 @@ export class SalesController {
     private readonly transactionManagerService: TransactionManagerService,
   ) {}
 
+  @Get()
+  @RequirePermission('sales.opportunity.read')
+  @ResolveResource({ type: 'MODULE', moduleKey: 'sales' })
+  async listOpportunities(
+    @CurrentPrincipal() principal: AuthenticatedPrincipal,
+  ) {
+    return {
+      items: await this.salesService.listOpportunities(
+        principal.activeOrganizationId!,
+      ),
+    };
+  }
+
   @Post()
   @RequirePermission('sales.opportunity.create')
   @ResolveResource({
@@ -78,11 +91,11 @@ export class SalesController {
     const result = await this.transactionManagerService.runInTransaction(
       (session) =>
         this.salesService.convertOpportunityToProject(
+          principal,
           opportunityId,
           {
             projectKey: dto.projectKey,
             projectName: dto.projectName,
-            actorUserId: principal.sub,
           },
           session,
         ),

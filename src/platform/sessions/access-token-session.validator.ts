@@ -1,13 +1,16 @@
-import { Injectable } from '@nestjs/common';
+import { Inject, Injectable } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
 import { Model } from 'mongoose';
 import { AppException } from 'src/common/errors/app-exception';
 import { REASON_CODES } from 'src/common/errors/reason-codes';
 import { AuthenticatedPrincipal } from 'src/common/types/authenticated-principal';
-import { IntegrationsService } from 'src/modules/integrations/integrations.service';
-import { AccessControlService } from 'src/platform/access-control/access-control.service';
+import { PrincipalAuthorizationService } from 'src/platform/access-control/principal-authorization.service';
 import { IdentityService } from 'src/platform/identity/identity.service';
 import { AuthSession, AuthSessionDocument } from './auth-session.schema';
+import {
+  SERVICE_PRINCIPAL_LOOKUP,
+  ServicePrincipalLookup,
+} from './service-principal-lookup.port';
 
 @Injectable()
 export class AccessTokenSessionValidator {
@@ -15,14 +18,20 @@ export class AccessTokenSessionValidator {
     @InjectModel(AuthSession.name)
     private readonly authSessionModel: Model<AuthSessionDocument>,
     private readonly identityService: IdentityService,
-    private readonly accessControlService: AccessControlService,
-    private readonly integrationsService: IntegrationsService,
+    private readonly principalAuthorizationService: PrincipalAuthorizationService,
+    @Inject(SERVICE_PRINCIPAL_LOOKUP)
+    private readonly servicePrincipalLookup: ServicePrincipalLookup,
   ) {}
 
   async validate(
     payload: AuthenticatedPrincipal,
   ): Promise<AuthenticatedPrincipal> {
-    if (!payload.sub || !payload.sessionId || !payload.sessionKind) {
+    if (
+      !payload.sub ||
+      !payload.sessionId ||
+      !payload.sessionKind ||
+      !payload.authorizationFingerprint
+    ) {
       throw new AppException(
         401,
         REASON_CODES.AUTH_REFRESH_INVALID,
@@ -80,11 +89,15 @@ export class AccessTokenSessionValidator {
         );
       }
 
-      const effectiveVersion =
-        await this.accessControlService.getEffectiveAuthorizationVersionForUser(
+      const authorizationContext =
+        await this.principalAuthorizationService.getUserAuthorizationContext(
           user.id,
+          session.activeOrganizationId,
         );
-      if (effectiveVersion !== payload.authorizationVersion) {
+      if (
+        authorizationContext.authorizationFingerprint !==
+        payload.authorizationFingerprint
+      ) {
         throw new AppException(
           401,
           REASON_CODES.PERMISSION_DENIED,
@@ -96,14 +109,15 @@ export class AccessTokenSessionValidator {
         ...payload,
         sub: user.id,
         email: user.email,
-        authorizationVersion: effectiveVersion,
+        authorizationVersion: authorizationContext.authorizationVersion,
+        authorizationFingerprint: authorizationContext.authorizationFingerprint,
         readOnly: session.readOnly,
         activeOrganizationId: session.activeOrganizationId,
       };
     }
 
     const serviceAccount =
-      await this.integrationsService.findServiceAccountById(payload.sub);
+      await this.servicePrincipalLookup.findServicePrincipalById(payload.sub);
     if (!serviceAccount || serviceAccount.status !== 'ACTIVE') {
       throw new AppException(
         403,
@@ -132,12 +146,19 @@ export class AccessTokenSessionValidator {
       );
     }
 
-    const effectiveVersion =
-      await this.accessControlService.getEffectiveAuthorizationVersionForServiceAccount(
-        serviceAccount.id,
-        serviceAccount.authorizationVersion,
+    const authorizationContext =
+      await this.principalAuthorizationService.getServiceAccountAuthorizationContext(
+        {
+          serviceAccountId: serviceAccount.id,
+          authorizationVersion: serviceAccount.authorizationVersion,
+          activeOrganizationId:
+            session.activeOrganizationId ?? serviceAccount.organizationId,
+        },
       );
-    if (effectiveVersion !== payload.authorizationVersion) {
+    if (
+      authorizationContext.authorizationFingerprint !==
+      payload.authorizationFingerprint
+    ) {
       throw new AppException(
         401,
         REASON_CODES.PERMISSION_DENIED,
@@ -148,7 +169,8 @@ export class AccessTokenSessionValidator {
     return {
       ...payload,
       sub: serviceAccount.id,
-      authorizationVersion: effectiveVersion,
+      authorizationVersion: authorizationContext.authorizationVersion,
+      authorizationFingerprint: authorizationContext.authorizationFingerprint,
       readOnly: session.readOnly,
       activeOrganizationId: session.activeOrganizationId,
     };

@@ -1,14 +1,31 @@
 import { JwtService } from '@nestjs/jwt';
-import { createOperationalFixtures, createTestContext, registerAndBootstrapOrganization } from './app-test-context';
+import {
+  createOperationalFixtures,
+  createTestContext,
+  loginNativeUser,
+  registerAndBootstrapOrganization,
+  registerNativeUser,
+} from './app-test-context';
 
 describe('Inflight backend security', () => {
-  it('rejects revoked sessions, invalid issuer and cross-organization access', async () => {
+  it('rejects revoked sessions, invalid issuer, invalid audience and cross-organization access', async () => {
     const context = await createTestContext();
 
     try {
-      const first = await registerAndBootstrapOrganization(context);
-      const second = await registerAndBootstrapOrganization(context);
-      const fixtures = await createOperationalFixtures(context, second.ownerAccessToken, second.organizationId);
+      const first = await registerAndBootstrapOrganization(
+        context,
+        'first-org',
+      );
+      const second = await registerAndBootstrapOrganization(
+        context,
+        'second-org',
+      );
+      const fixtures = await createOperationalFixtures(
+        context,
+        second.ownerAccessToken,
+        second.organizationId,
+        'cross-org',
+      );
 
       await context.http
         .get(`/api/v1/missions/${fixtures.missionId}`)
@@ -32,6 +49,7 @@ describe('Inflight backend security', () => {
           sessionId: 'fake-session',
           sessionVersion: 0,
           authorizationVersion: 0,
+          authorizationFingerprint: 'invalid-fingerprint',
           sessionKind: 'HUMAN',
           readOnly: false,
         },
@@ -43,13 +61,246 @@ describe('Inflight backend security', () => {
           expiresIn: '15m',
         },
       );
-      await context.http.get('/api/v1/auth/me').set('Authorization', `Bearer ${invalidIssuerToken}`).expect(401);
+      await context.http
+        .get('/api/v1/auth/me')
+        .set('Authorization', `Bearer ${invalidIssuerToken}`)
+        .expect(401);
+
+      const invalidAudienceToken = jwtService.sign(
+        {
+          sub: 'fake-user',
+          principalType: 'USER',
+          sessionId: 'fake-session',
+          sessionVersion: 0,
+          authorizationVersion: 0,
+          authorizationFingerprint: 'invalid-fingerprint',
+          sessionKind: 'HUMAN',
+          readOnly: false,
+        },
+        {
+          secret: 'test-access-secret',
+          issuer: 'inflight-test',
+          audience: 'wrong-audience',
+          algorithm: 'HS256',
+          expiresIn: '15m',
+        },
+      );
+      await context.http
+        .get('/api/v1/auth/me')
+        .set('Authorization', `Bearer ${invalidAudienceToken}`)
+        .expect(401);
 
       await context.http
         .post('/api/v1/clients')
         .set('Authorization', `Bearer ${second.ownerAccessToken}`)
-        .send({ organizationId: second.organizationId, key: 'client-sec', name: 'Client', extraField: 'blocked' })
+        .send({
+          organizationId: second.organizationId,
+          key: 'client-sec',
+          name: 'Client',
+          extraField: 'blocked',
+        })
         .expect(400);
+    } finally {
+      await context.close();
+    }
+  });
+
+  it('distinguishes expired refresh from replay and persists replay audit after rejection', async () => {
+    const context = await createTestContext();
+
+    try {
+      const registerResponse = await registerNativeUser(context, {
+        email: 'refresh@test.dev',
+        displayName: 'Refresh User',
+        password: 'RefreshPassword123!',
+      });
+      const loginResponse = await loginNativeUser(context, {
+        email: 'refresh@test.dev',
+        password: 'RefreshPassword123!',
+      });
+
+      await context.models.authSessions.updateOne(
+        { _id: loginResponse.body.sessionId as string },
+        { $set: { expiresAt: new Date(Date.now() - 60_000) } },
+      );
+      const expiredRefresh = await context.http
+        .post('/api/v1/auth/native/refresh')
+        .send({ refreshToken: loginResponse.body.refreshToken as string })
+        .expect(401);
+      expect(expiredRefresh.body.reasonCode).toBe('AUTH_SESSION_EXPIRED');
+
+      const expiredReplayAudits = await context.models.auditLogs.find({
+        resourceId: loginResponse.body.sessionId as string,
+        action: 'auth.refresh.replay',
+      });
+      expect(expiredReplayAudits).toHaveLength(0);
+
+      const freshLogin = await loginNativeUser(context, {
+        email: registerResponse.body.user.email as string,
+        password: 'RefreshPassword123!',
+      });
+      await context.http
+        .post('/api/v1/auth/native/refresh')
+        .send({ refreshToken: freshLogin.body.refreshToken as string })
+        .expect(201);
+
+      const replayResponse = await context.http
+        .post('/api/v1/auth/native/refresh')
+        .send({ refreshToken: freshLogin.body.refreshToken as string })
+        .expect(401);
+      expect(replayResponse.body.reasonCode).toBe(
+        'AUTH_REFRESH_TOKEN_CONSUMED',
+      );
+
+      const replayAudits = await context.models.auditLogs.find({
+        resourceId: freshLogin.body.sessionId as string,
+        reasonCode: 'AUTH_REFRESH_TOKEN_CONSUMED',
+      });
+      expect(replayAudits.length).toBeGreaterThan(0);
+    } finally {
+      await context.close();
+    }
+  });
+
+  it('rejects stale authorization after role assignment, role permission and policy changes', async () => {
+    const context = await createTestContext();
+
+    try {
+      const { ownerAccessToken, organizationId } =
+        await registerAndBootstrapOrganization(context, 'authz-stale');
+      const memberRegister = await registerNativeUser(context, {
+        email: 'member-authz@test.dev',
+        displayName: 'Member Authz',
+        password: 'MemberAuthz123!',
+      });
+
+      const roleResponse = await context.http
+        .post('/api/v1/roles')
+        .set('Authorization', `Bearer ${ownerAccessToken}`)
+        .send({
+          organizationId,
+          key: 'AUTHZ_MEMBER',
+          name: 'Authz Member',
+        })
+        .expect(201);
+      await context.http
+        .post(`/api/v1/roles/${roleResponse.body.id as string}/permissions`)
+        .set('Authorization', `Bearer ${ownerAccessToken}`)
+        .send({ permissionKeys: ['projects.project.read'] })
+        .expect(201);
+      await context.http
+        .post('/api/v1/role-assignments')
+        .set('Authorization', `Bearer ${ownerAccessToken}`)
+        .send({
+          organizationId,
+          principalId: memberRegister.body.user.id as string,
+          roleId: roleResponse.body.id as string,
+          scopeType: 'ORGANIZATION',
+          scopeId: organizationId,
+        })
+        .expect(201);
+
+      const memberLogin = await loginNativeUser(context, {
+        email: 'member-authz@test.dev',
+        password: 'MemberAuthz123!',
+        activeOrganizationId: organizationId,
+      });
+
+      const secondRoleResponse = await context.http
+        .post('/api/v1/roles')
+        .set('Authorization', `Bearer ${ownerAccessToken}`)
+        .send({
+          organizationId,
+          key: 'AUTHZ_EXTRA',
+          name: 'Authz Extra',
+        })
+        .expect(201);
+      await context.http
+        .post('/api/v1/role-assignments')
+        .set('Authorization', `Bearer ${ownerAccessToken}`)
+        .send({
+          organizationId,
+          principalId: memberRegister.body.user.id as string,
+          roleId: secondRoleResponse.body.id as string,
+          scopeType: 'ORGANIZATION',
+          scopeId: organizationId,
+        })
+        .expect(201);
+
+      await context.http
+        .get('/api/v1/auth/me')
+        .set(
+          'Authorization',
+          `Bearer ${memberLogin.body.accessToken as string}`,
+        )
+        .expect(401);
+
+      const reloginAfterAssignment = await loginNativeUser(context, {
+        email: 'member-authz@test.dev',
+        password: 'MemberAuthz123!',
+        activeOrganizationId: organizationId,
+      });
+      await context.http
+        .post(`/api/v1/roles/${roleResponse.body.id as string}/permissions`)
+        .set('Authorization', `Bearer ${ownerAccessToken}`)
+        .send({
+          permissionKeys: ['projects.project.read', 'flight.mission.read'],
+        })
+        .expect(201);
+
+      await context.http
+        .get('/api/v1/auth/me')
+        .set(
+          'Authorization',
+          `Bearer ${reloginAfterAssignment.body.accessToken as string}`,
+        )
+        .expect(401);
+
+      const reloginAfterPermissions = await loginNativeUser(context, {
+        email: 'member-authz@test.dev',
+        password: 'MemberAuthz123!',
+        activeOrganizationId: organizationId,
+      });
+      await context.models.accessPolicies.updateOne(
+        { key: 'GLOBAL' },
+        { $inc: { version: 1 } },
+      );
+
+      const stalePolicyResponse = await context.http
+        .get('/api/v1/auth/me')
+        .set(
+          'Authorization',
+          `Bearer ${reloginAfterPermissions.body.accessToken as string}`,
+        )
+        .expect(401);
+      expect(stalePolicyResponse.body.reasonCode).toBe('PERMISSION_DENIED');
+    } finally {
+      await context.close();
+    }
+  });
+
+  it('maps throttling to AUTH_RATE_LIMITED without leaking user existence', async () => {
+    const context = await createTestContext();
+
+    try {
+      let lastResponse = null as Awaited<
+        ReturnType<typeof context.http.post>
+      > | null;
+      for (let attempt = 0; attempt < 6; attempt += 1) {
+        lastResponse = await context.http
+          .post('/api/v1/auth/native/login')
+          .send({
+            email: 'missing-user@test.dev',
+            password: 'WrongPassword123!',
+          });
+      }
+
+      expect(lastResponse?.status).toBe(429);
+      expect(lastResponse?.body.reasonCode).toBe('AUTH_RATE_LIMITED');
+      expect(typeof lastResponse?.body.requestId).toBe('string');
+      expect(JSON.stringify(lastResponse?.body)).not.toContain(
+        'missing-user@test.dev',
+      );
     } finally {
       await context.close();
     }

@@ -12,12 +12,14 @@ export class TransactionManagerService {
     const session = await this.connection.startSession();
 
     try {
-      let result: T | undefined;
+      let completed = false;
+      let result!: T;
       await session.withTransaction(async () => {
         result = await callback(session);
+        completed = true;
       });
 
-      if (result === undefined) {
+      if (!completed) {
         throw new Error('Transaction callback did not return a value');
       }
 

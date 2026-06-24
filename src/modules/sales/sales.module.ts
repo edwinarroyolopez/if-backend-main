@@ -1,6 +1,7 @@
 import { Module } from '@nestjs/common';
 import { MongooseModule } from '@nestjs/mongoose';
 import { AccessControlModule } from 'src/platform/access-control/access-control.module';
+import { AuditModule } from 'src/platform/audit/audit.module';
 import { TransactionManagerService } from 'src/platform/database/transaction-manager.service';
 import { ProjectsModule } from 'src/modules/projects/projects.module';
 import { Opportunity, OpportunitySchema } from './opportunity.schema';
@@ -10,6 +11,7 @@ import { SalesService } from './sales.service';
 @Module({
   imports: [
     AccessControlModule,
+    AuditModule,
     ProjectsModule,
     MongooseModule.forFeature([
       { name: Opportunity.name, schema: OpportunitySchema },

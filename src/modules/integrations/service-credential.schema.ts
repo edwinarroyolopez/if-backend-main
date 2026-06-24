@@ -8,7 +8,7 @@ export class ServiceCredential {
   @Prop({ type: String, required: true, index: true })
   serviceAccountId!: string;
 
-  @Prop({ type: String, required: true, unique: true })
+  @Prop({ type: String, required: true })
   keyId!: string;
 
   @Prop({ type: String, required: true, default: 'CLIENT_SECRET' })
@@ -20,7 +20,7 @@ export class ServiceCredential {
   @Prop({ type: String, required: true, default: 'ACTIVE' })
   status!: 'ACTIVE' | 'REVOKED';
 
-  @Prop({ type: Date, index: true })
+  @Prop({ type: Date })
   expiresAt?: Date;
 
   @Prop({ type: Date })
@@ -30,6 +30,5 @@ export class ServiceCredential {
 export const ServiceCredentialSchema =
   SchemaFactory.createForClass(ServiceCredential);
 
-ServiceCredentialSchema.index({ keyId: 1 }, { unique: true });
 ServiceCredentialSchema.index({ serviceAccountId: 1, status: 1 });
 ServiceCredentialSchema.index({ expiresAt: 1 });

@@ -27,6 +27,13 @@ export type AuthorizationContextSnapshot = {
   authorizationFingerprint: string;
 };
 
+type ValidAssignment = RoleAssignmentDocument;
+
+export type ProjectCollectionAccess = {
+  broadRoleIds: string[];
+  projectScopedRoleIdsByProjectId: Record<string, string[]>;
+};
+
 @Injectable()
 export class PrincipalAuthorizationService {
   constructor(
@@ -49,50 +56,23 @@ export class PrincipalAuthorizationService {
       return [];
     }
 
-    const assignments = await this.roleAssignmentModel.find({
+    const navigationAssignments = await this.listValidAssignments({
       organizationId: principal.activeOrganizationId,
       principalType: principal.principalType,
       principalId: principal.sub,
-      status: 'ACTIVE',
-    });
-    const now = Date.now();
-    const navigationAssignments = assignments.filter((assignment) => {
-      if (assignment.validFrom && assignment.validFrom.getTime() > now) {
-        return false;
-      }
-
-      if (assignment.validTo && assignment.validTo.getTime() <= now) {
-        return false;
-      }
-
-      return (
-        (assignment.scopeType === 'ORGANIZATION' &&
-          assignment.scopeId === principal.activeOrganizationId) ||
-        assignment.scopeType === 'MODULE'
-      );
     });
     if (navigationAssignments.length === 0) {
       return [];
     }
 
-    const roleIds = [
-      ...new Set(navigationAssignments.map((assignment) => assignment.roleId)),
-    ];
-    const rolePermissions = await this.rolePermissionModel.find({
-      roleId: { $in: roleIds },
-    });
-    if (rolePermissions.length === 0) {
+    const permissionKeys = await this.listPermissionKeysForRoleIds(
+      navigationAssignments.map((assignment) => assignment.roleId),
+    );
+    if (permissionKeys.length === 0) {
       return [];
     }
 
-    const permissionIds = rolePermissions.map(
-      (rolePermission) => rolePermission.permissionId,
-    );
-    const permissions = await this.permissionDefinitionModel
-      .find({ _id: { $in: permissionIds }, status: 'ACTIVE' })
-      .sort({ key: 1 });
-
-    return permissions.map((permission) => permission.key);
+    return permissionKeys;
   }
 
   async getUserAuthorizationContext(
@@ -166,71 +146,126 @@ export class PrincipalAuthorizationService {
       return false;
     }
 
-    const assignments = await this.roleAssignmentModel.find({
+    const assignments = await this.listValidAssignments({
       organizationId: scopeContext.organizationId,
       principalType: principal.principalType,
       principalId: principal.sub,
-      status: 'ACTIVE',
     });
     if (assignments.length === 0) {
       return false;
     }
 
-    const now = Date.now();
-    const activeAssignments = assignments.filter((assignment) => {
-      if (assignment.validFrom && assignment.validFrom.getTime() > now) {
-        return false;
+    const scopeMatchedAssignments = assignments.filter((assignment) => {
+      if (scopeContext.allowProjectScope && assignment.scopeType === 'PROJECT') {
+        return true;
       }
-      if (assignment.validTo && assignment.validTo.getTime() <= now) {
-        return false;
-      }
+
       return scopeContext.candidateScopes.some(
         (scope) =>
           scope.type === assignment.scopeType &&
           scope.id === assignment.scopeId,
       );
     });
-    if (activeAssignments.length === 0) {
+    if (scopeMatchedAssignments.length === 0) {
       return false;
     }
 
-    const roleIds = [
-      ...new Set(activeAssignments.map((assignment) => assignment.roleId)),
-    ];
-    const [roles, rolePermissions] = await Promise.all([
-      this.roleModel.find({ _id: { $in: roleIds }, status: 'ACTIVE' }),
-      this.rolePermissionModel.find({ roleId: { $in: roleIds } }),
-    ]);
-    if (roles.length === 0 || rolePermissions.length === 0) {
-      return false;
-    }
-
-    const permissionIds = rolePermissions.map(
-      (rolePermission) => rolePermission.permissionId,
+    const permissionRoleIds = await this.listRoleIdsWithPermission(
+      scopeMatchedAssignments.map((assignment) => assignment.roleId),
+      permissionKey,
     );
-    const permissions = await this.permissionDefinitionModel.find({
-      _id: { $in: permissionIds },
-      key: permissionKey,
+    if (permissionRoleIds.length === 0) {
+      return false;
+    }
+
+    if (!scopeContext.projectAccessRoleIds?.length) {
+      return true;
+    }
+
+    const authorizedRoleIds = new Set(scopeContext.projectAccessRoleIds);
+    return scopeMatchedAssignments.some((assignment) =>
+      authorizedRoleIds.has(assignment.roleId),
+    );
+  }
+
+  async getProjectCollectionAccess(
+    principal: AuthenticatedPrincipal,
+    input: { organizationId: string; moduleKey: string; permissionKey: string },
+  ): Promise<ProjectCollectionAccess> {
+    const assignments = await this.listValidAssignments({
+      organizationId: input.organizationId,
+      principalType: principal.principalType,
+      principalId: principal.sub,
     });
-    return permissions.length > 0;
+    if (assignments.length === 0) {
+      return { broadRoleIds: [], projectScopedRoleIdsByProjectId: {} };
+    }
+
+    const permissionRoleIds = new Set(
+      await this.listRoleIdsWithPermission(
+        assignments.map((assignment) => assignment.roleId),
+        input.permissionKey,
+      ),
+    );
+    if (permissionRoleIds.size === 0) {
+      return { broadRoleIds: [], projectScopedRoleIdsByProjectId: {} };
+    }
+
+    const broadRoleIds = new Set<string>();
+    const projectScopedRoleIdsByProjectId: Record<string, string[]> = {};
+    for (const assignment of assignments) {
+      if (!permissionRoleIds.has(assignment.roleId)) {
+        continue;
+      }
+
+      if (
+        assignment.scopeType === 'ORGANIZATION' &&
+        assignment.scopeId === input.organizationId
+      ) {
+        broadRoleIds.add(assignment.roleId);
+        continue;
+      }
+
+      if (
+        assignment.scopeType === 'MODULE' &&
+        assignment.scopeId === input.moduleKey
+      ) {
+        broadRoleIds.add(assignment.roleId);
+        continue;
+      }
+
+      if (assignment.scopeType === 'PROJECT') {
+        const existing = projectScopedRoleIdsByProjectId[assignment.scopeId] ?? [];
+        existing.push(assignment.roleId);
+        projectScopedRoleIdsByProjectId[assignment.scopeId] = [
+          ...new Set(existing),
+        ];
+      }
+    }
+
+    return {
+      broadRoleIds: [...broadRoleIds],
+      projectScopedRoleIdsByProjectId,
+    };
   }
 
   async resolvePrimaryOrganizationForUser(
     userId: string,
   ): Promise<string | undefined> {
-    const assignment = await this.roleAssignmentModel.findOne({
+    const assignments = await this.listValidAssignments({
       principalType: 'USER',
       principalId: userId,
-      status: 'ACTIVE',
     });
+    const assignment = assignments.sort((left, right) =>
+      left.createdAt.getTime() - right.createdAt.getTime(),
+    )[0];
     return assignment?.organizationId;
   }
 
   async listOrganizationsForUser(userId: string): Promise<string[]> {
-    const assignments = await this.roleAssignmentModel.find({
+    const assignments = await this.listValidAssignments({
       principalType: 'USER',
       principalId: userId,
-      status: 'ACTIVE',
     });
     return [
       ...new Set(assignments.map((assignment) => assignment.organizationId)),
@@ -269,6 +304,83 @@ export class PrincipalAuthorizationService {
         : [];
 
     return { assignments, policies, roles };
+  }
+
+  private async listValidAssignments(query: {
+    organizationId?: string;
+    principalType: 'USER' | 'SERVICE_ACCOUNT';
+    principalId: string;
+  }): Promise<ValidAssignment[]> {
+    const assignments = await this.roleAssignmentModel.find({
+      ...query,
+      status: 'ACTIVE',
+    });
+    const now = Date.now();
+    return assignments.filter((assignment) => {
+      if (assignment.validFrom && assignment.validFrom.getTime() > now) {
+        return false;
+      }
+      if (assignment.validTo && assignment.validTo.getTime() <= now) {
+        return false;
+      }
+      return true;
+    });
+  }
+
+  private async listRoleIdsWithPermission(
+    roleIds: string[],
+    permissionKey: string,
+  ): Promise<string[]> {
+    const uniqueRoleIds = [...new Set(roleIds)];
+    if (uniqueRoleIds.length === 0) {
+      return [];
+    }
+
+    const [roles, permissions] = await Promise.all([
+      this.roleModel.find({ _id: { $in: uniqueRoleIds }, status: 'ACTIVE' }),
+      this.permissionDefinitionModel.find({ key: permissionKey, status: 'ACTIVE' }),
+    ]);
+    if (roles.length === 0 || permissions.length === 0) {
+      return [];
+    }
+
+    const activeRoleIds = new Set(roles.map((role) => role.id));
+    const permissionIds = permissions.map((permission) => permission.id);
+    const rolePermissions = await this.rolePermissionModel.find({
+      roleId: { $in: [...activeRoleIds] },
+      permissionId: { $in: permissionIds },
+    });
+
+    return [...new Set(rolePermissions.map((rolePermission) => rolePermission.roleId))];
+  }
+
+  private async listPermissionKeysForRoleIds(roleIds: string[]): Promise<string[]> {
+    const uniqueRoleIds = [...new Set(roleIds)];
+    if (uniqueRoleIds.length === 0) {
+      return [];
+    }
+
+    const roles = await this.roleModel.find({ _id: { $in: uniqueRoleIds }, status: 'ACTIVE' });
+    if (roles.length === 0) {
+      return [];
+    }
+
+    const rolePermissions = await this.rolePermissionModel.find({
+      roleId: { $in: roles.map((role) => role.id) },
+    });
+    if (rolePermissions.length === 0) {
+      return [];
+    }
+
+    const permissions = await this.permissionDefinitionModel
+      .find({
+        _id: {
+          $in: rolePermissions.map((rolePermission) => rolePermission.permissionId),
+        },
+        status: 'ACTIVE',
+      })
+      .sort({ key: 1 });
+    return [...new Set(permissions.map((permission) => permission.key))];
   }
 }
 

@@ -4,7 +4,8 @@ import { APP_GUARD } from '@nestjs/core';
 import { JwtModule } from '@nestjs/jwt';
 import { MongooseModule } from '@nestjs/mongoose';
 import { ThrottlerGuard, ThrottlerModule } from '@nestjs/throttler';
-import { buildAppConfig, validateEnv } from 'src/platform/config/app-config';
+import path from 'node:path';
+import { buildAppConfig } from 'src/platform/config/app-config';
 import { HttpPlatformModule } from 'src/platform/http/http.module';
 import { RequestContextMiddleware } from 'src/platform/http/request-context.middleware';
 import { HealthModule } from 'src/platform/health/health.module';
@@ -30,8 +31,11 @@ import { IntegrationsModule } from 'src/modules/integrations/integrations.module
     ConfigModule.forRoot({
       isGlobal: true,
       cache: true,
-      validate: validateEnv,
       load: [buildAppConfig],
+      envFilePath: [
+        path.resolve(__dirname, '..', '.env.local'),
+        path.resolve(__dirname, '..', '.env'),
+      ],
     }),
     ThrottlerModule.forRoot([
       {

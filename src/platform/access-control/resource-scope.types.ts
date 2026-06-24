@@ -13,6 +13,9 @@ export type ResourceScopeContext = {
   organizationId: string;
   moduleKey: string;
   candidateScopes: Array<{ type: ScopeType; id: string }>;
+  projectId?: string;
+  projectAccessRoleIds?: string[];
+  allowProjectScope?: boolean;
 };
 
 export type ResolveResourceOptions = {
@@ -20,6 +23,7 @@ export type ResolveResourceOptions = {
   param?: string;
   bodyField?: string;
   moduleKey?: string;
+  allowProjectScope?: boolean;
 };
 
 export interface ResourceScopeResolver {

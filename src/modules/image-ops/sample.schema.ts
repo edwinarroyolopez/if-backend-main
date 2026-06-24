@@ -12,7 +12,7 @@ export class Sample {
   @Prop({ type: String, required: true, index: true })
   projectId!: string;
 
-  @Prop({ type: String, required: true, index: true })
+  @Prop({ type: String, required: true })
   mediaBatchId!: string;
 
   @Prop({ type: String, required: true, index: true })

@@ -23,5 +23,3 @@ export class Organization {
 }
 
 export const OrganizationSchema = SchemaFactory.createForClass(Organization);
-
-OrganizationSchema.index({ key: 1 }, { unique: true });

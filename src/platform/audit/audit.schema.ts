@@ -53,7 +53,7 @@ export class AuditLog {
   @Prop({ type: String, index: true })
   requestId?: string;
 
-  @Prop({ type: String, index: true })
+  @Prop({ type: String })
   correlationId?: string;
 
   @Prop({ type: String })

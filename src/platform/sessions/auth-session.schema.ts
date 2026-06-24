@@ -23,7 +23,7 @@ export class AuthSession {
   @Prop({ type: String, index: true })
   serviceAccountId?: string;
 
-  @Prop({ type: String, enum: SESSION_KINDS, required: true, index: true })
+  @Prop({ type: String, enum: SESSION_KINDS, required: true })
   sessionKind!: SessionKind;
 
   @Prop({ type: String, select: false })
@@ -38,7 +38,7 @@ export class AuthSession {
   @Prop({ type: String, index: true })
   authorizationFingerprint?: string;
 
-  @Prop({ type: Date, required: true, index: true })
+  @Prop({ type: Date, required: true })
   expiresAt!: Date;
 
   @Prop({ type: Date })

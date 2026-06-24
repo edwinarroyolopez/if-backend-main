@@ -50,22 +50,20 @@ export class FinanceController {
 
   @Get()
   @RequirePermission('finance.invoice.read')
-  @ResolveResource({ type: 'MODULE', moduleKey: 'finance' })
+  @ResolveResource({ type: 'MODULE', moduleKey: 'finance', allowProjectScope: true })
   async listInvoiceRequests(
     @CurrentPrincipal() principal: AuthenticatedPrincipal,
   ) {
     return {
-      items: await this.financeService.listInvoiceRequests(
-        principal.activeOrganizationId!,
-      ),
+      items: await this.financeService.listInvoiceRequests(principal),
     };
   }
 
   @Post()
   @RequirePermission('finance.invoice.request')
   @ResolveResource({
-    type: 'ORGANIZATION',
-    bodyField: 'organizationId',
+    type: 'PROJECT',
+    bodyField: 'projectId',
     moduleKey: 'finance',
   })
   async requestInvoice(

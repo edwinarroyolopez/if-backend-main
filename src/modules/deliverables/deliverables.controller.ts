@@ -36,14 +36,16 @@ export class DeliverablesController {
 
   @Get()
   @RequirePermission('deliverables.deliverable.read')
-  @ResolveResource({ type: 'MODULE', moduleKey: 'deliverables' })
+  @ResolveResource({
+    type: 'MODULE',
+    moduleKey: 'deliverables',
+    allowProjectScope: true,
+  })
   async listDeliverables(
     @CurrentPrincipal() principal: AuthenticatedPrincipal,
   ) {
     return {
-      items: await this.deliverablesService.listDeliverables(
-        principal.activeOrganizationId!,
-      ),
+      items: await this.deliverablesService.listDeliverables(principal),
     };
   }
 

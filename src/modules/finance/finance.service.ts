@@ -4,6 +4,8 @@ import { Model } from 'mongoose';
 import { AppException } from 'src/common/errors/app-exception';
 import { REASON_CODES } from 'src/common/errors/reason-codes';
 import { AuthenticatedPrincipal } from 'src/common/types/authenticated-principal';
+import { CrmService } from 'src/modules/crm/crm.service';
+import { ProjectsService } from 'src/modules/projects/projects.service';
 import { ResourceScopeService } from 'src/platform/access-control/resource-scope.service';
 import {
   ResourceReference,
@@ -22,6 +24,8 @@ export class FinanceService implements ResourceScopeResolver, OnModuleInit {
   constructor(
     @InjectModel(InvoiceRequest.name)
     private readonly invoiceRequestModel: Model<InvoiceRequestDocument>,
+    private readonly crmService: CrmService,
+    private readonly projectsService: ProjectsService,
     private readonly resourceScopeService: ResourceScopeService,
     private readonly auditService: AuditService,
     private readonly transactionManagerService: TransactionManagerService,
@@ -46,6 +50,7 @@ export class FinanceService implements ResourceScopeResolver, OnModuleInit {
         'Invoice request was not found',
       );
     }
+    const project = await this.projectsService.findById(invoiceRequest.projectId);
     return {
       resourceType: 'INVOICE',
       resourceId: invoiceRequest.id,
@@ -53,9 +58,12 @@ export class FinanceService implements ResourceScopeResolver, OnModuleInit {
       moduleKey: 'finance',
       candidateScopes: [
         { type: 'INVOICE', id: invoiceRequest.id },
+        { type: 'PROJECT', id: invoiceRequest.projectId },
         { type: 'MODULE', id: 'finance' },
         { type: 'ORGANIZATION', id: invoiceRequest.organizationId },
       ],
+      projectId: invoiceRequest.projectId,
+      projectAccessRoleIds: project?.accessRoleIds ?? [],
     };
   }
 
@@ -70,6 +78,34 @@ export class FinanceService implements ResourceScopeResolver, OnModuleInit {
       currency: string;
     },
   ) {
+    const project = await this.projectsService.findById(input.projectId);
+    if (!project) {
+      throw new AppException(
+        404,
+        REASON_CODES.RESOURCE_NOT_FOUND,
+        'Project was not found',
+      );
+    }
+    const client = await this.crmService.findById(input.clientId);
+    if (!client) {
+      throw new AppException(
+        404,
+        REASON_CODES.RESOURCE_NOT_FOUND,
+        'Client was not found',
+      );
+    }
+    if (
+      project.organizationId !== input.organizationId ||
+      project.clientId !== client.id ||
+      client.organizationId !== input.organizationId
+    ) {
+      throw new AppException(
+        409,
+        REASON_CODES.RESOURCE_STATE_CONFLICT,
+        'Invoice request references resources outside the requested organization',
+      );
+    }
+
     return this.transactionManagerService.runInTransaction(async (session) => {
       const [invoiceRequest] = await this.invoiceRequestModel.create(
         [
@@ -99,9 +135,23 @@ export class FinanceService implements ResourceScopeResolver, OnModuleInit {
     });
   }
 
-  async listInvoiceRequests(organizationId: string) {
+  async listInvoiceRequests(principal: AuthenticatedPrincipal) {
+    const organizationId = principal.activeOrganizationId;
+    if (!organizationId) {
+      return [];
+    }
+
+    const accessibleProjectIds = await this.projectsService.listAccessibleProjectIds(
+      principal,
+      'finance',
+      'finance.invoice.read',
+    );
+    if (accessibleProjectIds.length === 0) {
+      return [];
+    }
+
     const invoiceRequests = await this.invoiceRequestModel
-      .find({ organizationId })
+      .find({ organizationId, projectId: { $in: accessibleProjectIds } })
       .sort({ createdAt: -1, _id: 1 });
 
     return invoiceRequests.map((invoiceRequest) => ({

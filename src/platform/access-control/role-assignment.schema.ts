@@ -46,7 +46,7 @@ export class RoleAssignment {
   @Prop({ type: Date })
   validFrom?: Date;
 
-  @Prop({ type: Date, index: true })
+  @Prop({ type: Date })
   validTo?: Date;
 
   @Prop({ type: String, required: true })

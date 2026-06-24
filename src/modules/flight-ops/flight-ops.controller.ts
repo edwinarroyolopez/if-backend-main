@@ -83,14 +83,14 @@ export class FlightOpsController {
 
   @Get()
   @RequirePermission('flight.mission.read')
-  @ResolveResource({ type: 'MODULE', moduleKey: 'flight' })
+  @ResolveResource({ type: 'MODULE', moduleKey: 'flight', allowProjectScope: true })
   async listMissions(
     @CurrentPrincipal() principal: AuthenticatedPrincipal,
     @Query() query: ListMissionsQueryDto,
   ) {
     return {
       items: await this.flightOpsService.listMissions(
-        principal.activeOrganizationId!,
+        principal,
         query,
       ),
     };
@@ -113,6 +113,8 @@ export class FlightOpsController {
     });
     return {
       id: mission.id,
+      organizationId: mission.organizationId,
+      projectId: mission.projectId,
       key: mission.key,
       name: mission.name,
       status: mission.status,

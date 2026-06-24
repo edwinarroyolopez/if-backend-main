@@ -131,6 +131,47 @@ export class IdentityService {
     return this.userModel.findById(userId);
   }
 
+  async findUserByEmail(email: string): Promise<UserDocument | null> {
+    return this.userModel.findOne({ normalizedEmail: normalizeEmail(email) });
+  }
+
+  async listUsersByIds(userIds: string[]): Promise<UserDocument[]> {
+    if (userIds.length === 0) {
+      return [];
+    }
+
+    return this.userModel
+      .find({ _id: { $in: [...new Set(userIds)] } })
+      .sort({ displayName: 1, email: 1 });
+  }
+
+  async ensureActivePasswordCredential(
+    userId: string,
+    password: string,
+    session: ClientSession,
+  ) {
+    this.passwordHasherService.enforcePolicy(password);
+    const passwordHash = await this.passwordHasherService.hash(password);
+
+    await this.credentialModel.updateMany(
+      { principalId: userId, type: 'PASSWORD', status: 'ACTIVE' },
+      { $set: { status: 'REVOKED', rotatedAt: new Date() } },
+      { session },
+    );
+    await this.credentialModel.create(
+      [
+        {
+          principalId: userId,
+          type: 'PASSWORD',
+          passwordHash,
+          status: 'ACTIVE',
+          rotatedAt: new Date(),
+        },
+      ],
+      { session },
+    );
+  }
+
   async bumpSessionVersion(
     userId: string,
     session: ClientSession,

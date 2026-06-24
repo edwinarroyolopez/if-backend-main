@@ -15,7 +15,7 @@ export class User {
   @Prop({ type: String, required: true, trim: true })
   displayName!: string;
 
-  @Prop({ type: String, enum: USER_STATUSES, default: 'ACTIVE', index: true })
+  @Prop({ type: String, enum: USER_STATUSES, default: 'ACTIVE' })
   status!: UserStatus;
 
   @Prop({ type: Number, required: true, default: 0, index: true })
@@ -30,5 +30,4 @@ export class User {
 
 export const UserSchema = SchemaFactory.createForClass(User);
 
-UserSchema.index({ normalizedEmail: 1 }, { unique: true });
 UserSchema.index({ status: 1 });

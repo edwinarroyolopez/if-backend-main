@@ -1,4 +1,12 @@
-import { Body, Controller, Get, Param, Post, UseGuards } from '@nestjs/common';
+import {
+  Body,
+  Controller,
+  Get,
+  Param,
+  Post,
+  Query,
+  UseGuards,
+} from '@nestjs/common';
 import { CurrentPrincipal } from './current-principal.decorator';
 import {
   RequirePermission,
@@ -25,8 +33,25 @@ export class AccessControlController {
   ) {}
 
   @Get('permissions')
+  @RequirePermission('admin.permission.read')
+  @ResolveResource({ type: 'MODULE', moduleKey: 'admin' })
   async listPermissions() {
     return { items: await this.accessControlService.listPermissions() };
+  }
+
+  @Get('admin/users')
+  @RequirePermission('admin.user.read')
+  @ResolveResource({ type: 'MODULE', moduleKey: 'admin' })
+  async listUsers(
+    @CurrentPrincipal() principal: AuthenticatedPrincipal,
+    @Query('q') search?: string,
+  ) {
+    return {
+      items: await this.accessControlService.listUsers(
+        principal.activeOrganizationId!,
+        search,
+      ),
+    };
   }
 
   @Get('roles')

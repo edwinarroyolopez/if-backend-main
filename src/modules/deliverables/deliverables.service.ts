@@ -47,11 +47,14 @@ export class DeliverablesService
         'Deliverable was not found',
       );
     }
+    const project = await this.projectsService.findById(deliverable.projectId);
     return {
       resourceType: 'DELIVERABLE',
       resourceId: deliverable.id,
       organizationId: deliverable.organizationId,
       moduleKey: 'deliverables',
+      projectId: deliverable.projectId,
+      projectAccessRoleIds: project?.accessRoleIds ?? [],
       candidateScopes: [
         { type: 'DELIVERABLE', id: deliverable.id },
         { type: 'PROJECT', id: deliverable.projectId },
@@ -99,9 +102,23 @@ export class DeliverablesService
     return deliverable;
   }
 
-  async listDeliverables(organizationId: string) {
+  async listDeliverables(principal: AuthenticatedPrincipal) {
+    const organizationId = principal.activeOrganizationId;
+    if (!organizationId) {
+      return [];
+    }
+
+    const accessibleProjectIds = await this.projectsService.listAccessibleProjectIds(
+      principal,
+      'deliverables',
+      'deliverables.deliverable.read',
+    );
+    if (accessibleProjectIds.length === 0) {
+      return [];
+    }
+
     const deliverables = await this.deliverableModel
-      .find({ organizationId })
+      .find({ organizationId, projectId: { $in: accessibleProjectIds } })
       .sort({ createdAt: -1, _id: 1 });
 
     return deliverables.map((deliverable) => ({

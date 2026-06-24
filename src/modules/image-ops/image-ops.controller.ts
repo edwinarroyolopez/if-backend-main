@@ -57,19 +57,17 @@ export class ImageOpsController {
 
   @Get('media-batches')
   @RequirePermission('image.media_batch.read')
-  @ResolveResource({ type: 'MODULE', moduleKey: 'image' })
+  @ResolveResource({ type: 'MODULE', moduleKey: 'image', allowProjectScope: true })
   async listMediaBatches(
     @CurrentPrincipal() principal: AuthenticatedPrincipal,
   ) {
     return {
-      items: await this.imageOpsService.listMediaBatches(
-        principal.activeOrganizationId!,
-      ),
+      items: await this.imageOpsService.listMediaBatches(principal),
     };
   }
 
   @Post('samples')
-  @RequirePermission('image.sample.approve')
+  @RequirePermission('image.sample.create')
   @ResolveResource({
     type: 'MEDIA_BATCH',
     bodyField: 'mediaBatchId',

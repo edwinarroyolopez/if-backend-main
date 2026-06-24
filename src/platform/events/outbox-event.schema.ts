@@ -39,7 +39,7 @@ export class OutboxEvent {
   @Prop({ type: Date })
   processingStartedAt?: Date;
 
-  @Prop({ type: String, index: true })
+  @Prop({ type: String })
   correlationId?: string;
 
   createdAt!: Date;

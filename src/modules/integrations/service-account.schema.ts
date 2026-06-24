@@ -25,7 +25,6 @@ export class ServiceAccount {
     type: String,
     enum: SERVICE_ACCOUNT_STATUSES,
     default: 'ACTIVE',
-    index: true,
   })
   status!: ServiceAccountStatus;
 

@@ -28,5 +28,4 @@ export class PermissionDefinition {
 export const PermissionDefinitionSchema =
   SchemaFactory.createForClass(PermissionDefinition);
 
-PermissionDefinitionSchema.index({ key: 1 }, { unique: true });
 PermissionDefinitionSchema.index({ moduleKey: 1, status: 1 });

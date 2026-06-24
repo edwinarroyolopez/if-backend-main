@@ -5,6 +5,7 @@ import { REASON_CODES } from 'src/common/errors/reason-codes';
 import { AuthenticatedPrincipal } from 'src/common/types/authenticated-principal';
 import {
   ResolveResourceOptions,
+  ResourceReference,
   ResourceScopeContext,
   ResourceScopeResolver,
 } from './resource-scope.types';
@@ -15,6 +16,23 @@ export class ResourceScopeService {
 
   registerResolver(resolver: ResourceScopeResolver) {
     this.resolvers.push(resolver);
+  }
+
+  async resolveResourceReference(
+    reference: ResourceReference,
+  ): Promise<ResourceScopeContext> {
+    const resolver = this.resolvers.find((candidate) =>
+      candidate.supports(reference.resourceType),
+    );
+    if (!resolver) {
+      throw new AppException(
+        403,
+        REASON_CODES.SCOPE_NOT_COVERED,
+        'Request scope is not covered',
+      );
+    }
+
+    return resolver.resolve(reference);
   }
 
   async resolveForRequest(
@@ -45,6 +63,7 @@ export class ResourceScopeService {
           { type: 'MODULE', id: options.moduleKey },
           { type: 'ORGANIZATION', id: organizationId },
         ],
+        allowProjectScope: options.allowProjectScope ?? false,
       };
     }
 
@@ -68,6 +87,7 @@ export class ResourceScopeService {
             : []),
           { type: 'ORGANIZATION', id: organizationId },
         ],
+        allowProjectScope: options.allowProjectScope ?? false,
       };
     }
 
@@ -79,18 +99,7 @@ export class ResourceScopeService {
       );
     }
 
-    const resolver = this.resolvers.find((candidate) =>
-      candidate.supports(options.type),
-    );
-    if (!resolver) {
-      throw new AppException(
-        403,
-        REASON_CODES.SCOPE_NOT_COVERED,
-        'Request scope is not covered',
-      );
-    }
-
-    const resolved = await resolver.resolve({
+    const resolved = await this.resolveResourceReference({
       resourceType: options.type,
       resourceId,
       moduleKey: options.moduleKey,

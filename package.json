@@ -23,6 +23,7 @@
     "test:security": "jest --config ./test/jest-e2e.json --runInBand test/security.e2e-spec.ts",
     "test:concurrency": "jest --config ./test/jest-e2e.json --runInBand test/concurrency.e2e-spec.ts",
     "test:e2e": "jest --config ./test/jest-e2e.json --runInBand test/app.e2e-spec.ts",
+    "superadmin:bootstrap": "ts-node -r tsconfig-paths/register src/scripts/superadmin-bootstrap.ts",
     "audit:file-size": "node ./scripts/audit-file-size.mjs",
     "audit:secrets": "node ./scripts/audit-secrets.mjs",
     "audit:architecture": "node ./scripts/audit-architecture.mjs",

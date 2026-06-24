@@ -1,4 +1,6 @@
 import {
+  ArrayNotEmpty,
+  ArrayUnique,
   IsIn,
   IsMongoId,
   IsString,
@@ -22,6 +24,8 @@ export class CreateRoleDto {
 }
 
 export class AssignPermissionsDto {
+  @ArrayNotEmpty()
+  @ArrayUnique()
   @IsString({ each: true })
   permissionKeys!: string[];
 }
@@ -43,6 +47,7 @@ export class CreateRoleAssignmentDto {
     'CLIENT',
     'MISSION',
     'MEDIA_BATCH',
+    'SAMPLE',
     'DELIVERABLE',
     'INVOICE',
     'ENVIRONMENT',
@@ -54,6 +59,7 @@ export class CreateRoleAssignmentDto {
     | 'CLIENT'
     | 'MISSION'
     | 'MEDIA_BATCH'
+    | 'SAMPLE'
     | 'DELIVERABLE'
     | 'INVOICE'
     | 'ENVIRONMENT';

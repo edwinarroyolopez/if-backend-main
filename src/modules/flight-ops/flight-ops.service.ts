@@ -47,12 +47,15 @@ export class FlightOpsService implements ResourceScopeResolver, OnModuleInit {
         'Mission was not found',
       );
     }
+    const project = await this.projectsService.findById(mission.projectId);
 
     return {
       resourceType: 'MISSION',
       resourceId: mission.id,
       organizationId: mission.organizationId,
       moduleKey: 'flight',
+      projectId: mission.projectId,
+      projectAccessRoleIds: project?.accessRoleIds ?? [],
       candidateScopes: [
         { type: 'MISSION', id: mission.id },
         { type: 'PROJECT', id: mission.projectId },
@@ -112,7 +115,7 @@ export class FlightOpsService implements ResourceScopeResolver, OnModuleInit {
   }
 
   async listMissions(
-    organizationId: string,
+    principal: AuthenticatedPrincipal,
     filters: {
       projectId?: string;
       status?:
@@ -123,16 +126,34 @@ export class FlightOpsService implements ResourceScopeResolver, OnModuleInit {
         | 'COMPLETED'
         | 'CANCELLED'
         | 'FAILED';
-    },
+      },
   ) {
+    const organizationId = principal.activeOrganizationId;
+    if (!organizationId) {
+      return [];
+    }
+
+    const accessibleProjectIds = await this.projectsService.listAccessibleProjectIds(
+      principal,
+      'flight',
+      'flight.mission.read',
+    );
+    if (accessibleProjectIds.length === 0) {
+      return [];
+    }
+
     const query: {
       organizationId: string;
-      projectId?: string;
+      projectId?: string | { $in: string[] };
       status?: string;
     } = {
       organizationId,
+      projectId: { $in: accessibleProjectIds },
     };
     if (filters.projectId) {
+      if (!accessibleProjectIds.includes(filters.projectId)) {
+        return [];
+      }
       query.projectId = filters.projectId;
     }
     if (filters.status) {

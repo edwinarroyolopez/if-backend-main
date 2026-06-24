@@ -13,6 +13,7 @@ export const PERMISSION_REGISTRY = [
   'image.media_batch.read',
   'image.media_batch.ingest',
   'image.sample.read',
+  'image.sample.create',
   'image.sample.approve',
   'deliverables.deliverable.read',
   'deliverables.deliverable.create',
@@ -20,17 +21,21 @@ export const PERMISSION_REGISTRY = [
   'finance.invoice.read',
   'finance.invoice.request',
   'finance.invoice.approve',
+  'admin.permission.read',
   'admin.role.read',
   'admin.role.create',
   'admin.permission.assign',
   'admin.role_assignment.read',
   'admin.role.assign',
+  'admin.user.read',
   'security.session.revoke',
   'integrations.service_account.create',
   'integrations.service_account.rotate',
 ] as const;
 
 export type PermissionKey = (typeof PERMISSION_REGISTRY)[number];
+
+export const SUPERADMIN_ROLE_KEY = 'SUPERADMIN';
 
 export const DEFAULT_BOOTSTRAP_ROLE_KEY = 'ORG_ADMIN';
 
@@ -59,6 +64,7 @@ export const DEFAULT_ORG_ROLE_TEMPLATES: Record<
     'image.media_batch.read',
     'image.media_batch.ingest',
     'image.sample.read',
+    'image.sample.create',
     'image.sample.approve',
     'deliverables.deliverable.read',
     'deliverables.deliverable.approve',

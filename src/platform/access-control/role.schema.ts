@@ -15,7 +15,7 @@ export class Role {
   @Prop({ type: String, required: true })
   name!: string;
 
-  @Prop({ type: String, enum: ROLE_STATUSES, default: 'ACTIVE', index: true })
+  @Prop({ type: String, enum: ROLE_STATUSES, default: 'ACTIVE' })
   status!: RoleStatus;
 
   @Prop({ type: Number, required: true, default: 1 })

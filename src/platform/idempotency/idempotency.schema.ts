@@ -28,7 +28,7 @@ export class IdempotencyKeyRecord {
   @Prop({ type: Object })
   responseBody?: Record<string, unknown>;
 
-  @Prop({ type: Date, required: true, index: true })
+  @Prop({ type: Date, required: true })
   expiresAt!: Date;
 }
 

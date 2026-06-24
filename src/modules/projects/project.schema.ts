@@ -24,6 +24,12 @@ export class Project {
   @Prop({ type: String, enum: PROJECT_STATUSES, default: 'DRAFT' })
   status!: ProjectStatus;
 
+  @Prop({ type: [String], default: [] })
+  accessRoleIds!: string[];
+
+  @Prop({ type: Number, required: true, default: 1 })
+  accessPolicyVersion!: number;
+
   @Prop({ type: String, required: true })
   createdBy!: string;
 }
@@ -31,3 +37,4 @@ export class Project {
 export const ProjectSchema = SchemaFactory.createForClass(Project);
 
 ProjectSchema.index({ organizationId: 1, key: 1 }, { unique: true });
+ProjectSchema.index({ organizationId: 1, accessRoleIds: 1 });

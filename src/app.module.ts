@@ -16,6 +16,8 @@ import { IdentityModule } from 'src/platform/identity/identity.module';
 import { SessionsModule } from 'src/platform/sessions/sessions.module';
 import { AuthHttpModule } from 'src/platform/auth-http/auth-http.module';
 import { AccessControlModule } from 'src/platform/access-control/access-control.module';
+import { NotificationsModule } from 'src/platform/notifications/notifications.module';
+import { RealtimeModule } from 'src/platform/realtime/realtime.module';
 import { OrganizationsModule } from 'src/modules/organizations/organizations.module';
 import { CrmModule } from 'src/modules/crm/crm.module';
 import { SalesModule } from 'src/modules/sales/sales.module';
@@ -59,6 +61,8 @@ import { IntegrationsModule } from 'src/modules/integrations/integrations.module
     IdempotencyModule,
     IdentityModule,
     AccessControlModule,
+    RealtimeModule,
+    NotificationsModule,
     SessionsModule,
     AuthHttpModule,
     OrganizationsModule,

@@ -1,0 +1,164 @@
+export const PROJECT_ACTIVITY_EVENT_DEFINITIONS: Record<
+  string,
+  { type: string; category: string; title: string; resourceKind: string }
+> = {
+  'projects.project.create': {
+    type: 'PROJECT_CREATED',
+    category: 'PROJECT',
+    title: 'Proyecto creado',
+    resourceKind: 'PROJECT',
+  },
+  'projects.documentation.import_commit': {
+    type: 'DOCUMENTATION_IMPORTED',
+    category: 'DOCUMENTATION',
+    title: 'Documentacion importada',
+    resourceKind: 'DOCUMENTATION',
+  },
+  'projects.documentation.create': {
+    type: 'DOCUMENT_PAGE_CREATED',
+    category: 'DOCUMENTATION',
+    title: 'Pagina documental creada',
+    resourceKind: 'DOCUMENT_PAGE',
+  },
+  'projects.documentation.update': {
+    type: 'DOCUMENT_PAGE_UPDATED',
+    category: 'DOCUMENTATION',
+    title: 'Pagina documental actualizada',
+    resourceKind: 'DOCUMENT_PAGE',
+  },
+  'projects.documentation.review': {
+    type: 'DOCUMENT_PAGE_SUBMITTED',
+    category: 'DOCUMENTATION',
+    title: 'Pagina enviada a revision',
+    resourceKind: 'DOCUMENT_PAGE',
+  },
+  'projects.documentation.approve': {
+    type: 'DOCUMENT_PAGE_APPROVED',
+    category: 'DOCUMENTATION',
+    title: 'Pagina documental aprobada',
+    resourceKind: 'DOCUMENT_PAGE',
+  },
+  'projects.documentation.archive': {
+    type: 'DOCUMENT_PAGE_ARCHIVED',
+    category: 'DOCUMENTATION',
+    title: 'Pagina documental archivada',
+    resourceKind: 'DOCUMENT_PAGE',
+  },
+  'projects.context_snapshot.create': {
+    type: 'CONTEXT_SNAPSHOT_CREATED',
+    category: 'SNAPSHOT',
+    title: 'Snapshot de contexto creado',
+    resourceKind: 'CONTEXT_SNAPSHOT',
+  },
+  'projects.roadmap.import_commit': {
+    type: 'ROADMAP_IMPORTED',
+    category: 'ROADMAP',
+    title: 'Roadmap importado',
+    resourceKind: 'ROADMAP',
+  },
+  'projects.roadmap.activate': {
+    type: 'ROADMAP_ACTIVATED',
+    category: 'ROADMAP',
+    title: 'Roadmap activado',
+    resourceKind: 'ROADMAP',
+  },
+  'projects.roadmap.archive': {
+    type: 'ROADMAP_ARCHIVED',
+    category: 'ROADMAP',
+    title: 'Roadmap archivado',
+    resourceKind: 'ROADMAP',
+  },
+  'projects.backlog.import_commit': {
+    type: 'BACKLOG_IMPORTED',
+    category: 'BACKLOG',
+    title: 'Backlog importado',
+    resourceKind: 'BACKLOG',
+  },
+  'projects.backlog.create': {
+    type: 'BACKLOG_ITEM_CREATED',
+    category: 'BACKLOG',
+    title: 'Item de backlog creado',
+    resourceKind: 'BACKLOG_ITEM',
+  },
+  'projects.backlog.update': {
+    type: 'BACKLOG_ITEM_UPDATED',
+    category: 'BACKLOG',
+    title: 'Item de backlog actualizado',
+    resourceKind: 'BACKLOG_ITEM',
+  },
+  'projects.backlog.reorder': {
+    type: 'BACKLOG_REORDERED',
+    category: 'BACKLOG',
+    title: 'Backlog reordenado',
+    resourceKind: 'BACKLOG',
+  },
+  'projects.backlog.archive': {
+    type: 'BACKLOG_ITEM_ARCHIVED',
+    category: 'BACKLOG',
+    title: 'Item de backlog archivado',
+    resourceKind: 'BACKLOG_ITEM',
+  },
+  'projects.sprint.create': {
+    type: 'SPRINT_CREATED',
+    category: 'SCRUM',
+    title: 'Sprint creado',
+    resourceKind: 'SPRINT',
+  },
+  'projects.sprint.add_items': {
+    type: 'SPRINT_ITEMS_ADDED',
+    category: 'SCRUM',
+    title: 'Items agregados al sprint',
+    resourceKind: 'SPRINT',
+  },
+  'projects.sprint.start': {
+    type: 'SPRINT_STARTED',
+    category: 'SCRUM',
+    title: 'Sprint iniciado',
+    resourceKind: 'SPRINT',
+  },
+  'projects.sprint.board_move': {
+    type: 'SPRINT_BOARD_MOVED',
+    category: 'SCRUM',
+    title: 'Card movida en Scrum',
+    resourceKind: 'SPRINT_ITEM',
+  },
+  'projects.sprint.complete': {
+    type: 'SPRINT_COMPLETED',
+    category: 'SCRUM',
+    title: 'Sprint completado',
+    resourceKind: 'SPRINT',
+  },
+  'projects.sprint.cancel': {
+    type: 'SPRINT_CANCELLED',
+    category: 'SCRUM',
+    title: 'Sprint cancelado',
+    resourceKind: 'SPRINT',
+  },
+  'projects.team.create': {
+    type: 'TEAM_MEMBER_CREATED',
+    category: 'TEAM',
+    title: 'Miembro operativo agregado',
+    resourceKind: 'TEAM_MEMBER',
+  },
+  'projects.team.update': {
+    type: 'TEAM_MEMBER_UPDATED',
+    category: 'TEAM',
+    title: 'Miembro operativo actualizado',
+    resourceKind: 'TEAM_MEMBER',
+  },
+  'projects.team.deactivate': {
+    type: 'TEAM_MEMBER_DEACTIVATED',
+    category: 'TEAM',
+    title: 'Miembro operativo desactivado',
+    resourceKind: 'TEAM_MEMBER',
+  },
+  'projects.team.activate': {
+    type: 'TEAM_MEMBER_ACTIVATED',
+    category: 'TEAM',
+    title: 'Miembro operativo activado',
+    resourceKind: 'TEAM_MEMBER',
+  },
+};
+export const PROJECT_ACTIVITY_ACTIONS = Object.keys(
+  PROJECT_ACTIVITY_EVENT_DEFINITIONS,
+);

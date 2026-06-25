@@ -31,4 +31,6 @@ export function applyTestEnvironment(mongodbUri: string) {
   process.env.ARGON2_MEMORY_COST = '19456';
   process.env.ARGON2_TIME_COST = '2';
   process.env.ARGON2_PARALLELISM = '1';
+  process.env.IF_CONNECTORS_BASE_URL = 'http://127.0.0.1:7100/api/v1';
+  process.env.IF_CONNECTORS_TIMEOUT_MS = '5000';
 }

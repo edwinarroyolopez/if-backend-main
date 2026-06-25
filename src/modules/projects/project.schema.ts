@@ -16,7 +16,12 @@ export class Project {
   @Prop({ type: String, required: true, index: true })
   organizationId!: string;
 
-  @Prop({ type: String, enum: PROJECT_KINDS, required: true, default: 'CLIENT' })
+  @Prop({
+    type: String,
+    enum: PROJECT_KINDS,
+    required: true,
+    default: 'CLIENT',
+  })
   projectKind!: ProjectKind;
 
   @Prop({ type: String, index: true })

@@ -50,7 +50,11 @@ export class FinanceController {
 
   @Get()
   @RequirePermission('finance.invoice.read')
-  @ResolveResource({ type: 'MODULE', moduleKey: 'finance', allowProjectScope: true })
+  @ResolveResource({
+    type: 'MODULE',
+    moduleKey: 'finance',
+    allowProjectScope: true,
+  })
   async listInvoiceRequests(
     @CurrentPrincipal() principal: AuthenticatedPrincipal,
   ) {

@@ -15,6 +15,10 @@ import {
 import { AuditService } from 'src/platform/audit/audit.service';
 import { TransactionManagerService } from 'src/platform/database/transaction-manager.service';
 import { OutboxService } from 'src/platform/events/outbox.service';
+import {
+  buildMediaBatchScopeContext,
+  buildSampleScopeContext,
+} from './image-ops.resource-scope';
 import { MediaBatch, MediaBatchDocument } from './media-batch.schema';
 import { Sample, SampleDocument } from './sample.schema';
 
@@ -52,22 +56,7 @@ export class ImageOpsService implements ResourceScopeResolver, OnModuleInit {
         );
       }
       const project = await this.projectsService.findById(sample.projectId);
-
-      return {
-        resourceType: 'SAMPLE',
-        resourceId: sample.id,
-        organizationId: sample.organizationId,
-        moduleKey: 'image',
-        projectId: sample.projectId,
-        projectAccessRoleIds: project?.accessRoleIds ?? [],
-        candidateScopes: [
-          { type: 'SAMPLE', id: sample.id },
-          { type: 'MEDIA_BATCH', id: sample.mediaBatchId },
-          { type: 'PROJECT', id: sample.projectId },
-          { type: 'MODULE', id: 'image' },
-          { type: 'ORGANIZATION', id: sample.organizationId },
-        ],
-      };
+      return buildSampleScopeContext(sample, project?.accessRoleIds ?? []);
     }
 
     const mediaBatch = await this.mediaBatchModel.findById(
@@ -78,23 +67,13 @@ export class ImageOpsService implements ResourceScopeResolver, OnModuleInit {
         404,
         REASON_CODES.RESOURCE_NOT_FOUND,
         'Media batch was not found',
-        );
-      }
+      );
+    }
     const project = await this.projectsService.findById(mediaBatch.projectId);
-    return {
-      resourceType: 'MEDIA_BATCH',
-      resourceId: mediaBatch.id,
-      organizationId: mediaBatch.organizationId,
-      moduleKey: 'image',
-      projectId: mediaBatch.projectId,
-      projectAccessRoleIds: project?.accessRoleIds ?? [],
-      candidateScopes: [
-        { type: 'MEDIA_BATCH', id: mediaBatch.id },
-        { type: 'PROJECT', id: mediaBatch.projectId },
-        { type: 'MODULE', id: 'image' },
-        { type: 'ORGANIZATION', id: mediaBatch.organizationId },
-      ],
-    };
+    return buildMediaBatchScopeContext(
+      mediaBatch,
+      project?.accessRoleIds ?? [],
+    );
   }
 
   async handleMissionCompletedEvent(event: {
@@ -330,11 +309,12 @@ export class ImageOpsService implements ResourceScopeResolver, OnModuleInit {
       return [];
     }
 
-    const accessibleProjectIds = await this.projectsService.listAccessibleProjectIds(
-      principal,
-      'image',
-      'image.media_batch.read',
-    );
+    const accessibleProjectIds =
+      await this.projectsService.listAccessibleProjectIds(
+        principal,
+        'image',
+        'image.media_batch.read',
+      );
     if (accessibleProjectIds.length === 0) {
       return [];
     }

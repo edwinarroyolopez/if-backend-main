@@ -126,18 +126,19 @@ export class FlightOpsService implements ResourceScopeResolver, OnModuleInit {
         | 'COMPLETED'
         | 'CANCELLED'
         | 'FAILED';
-      },
+    },
   ) {
     const organizationId = principal.activeOrganizationId;
     if (!organizationId) {
       return [];
     }
 
-    const accessibleProjectIds = await this.projectsService.listAccessibleProjectIds(
-      principal,
-      'flight',
-      'flight.mission.read',
-    );
+    const accessibleProjectIds =
+      await this.projectsService.listAccessibleProjectIds(
+        principal,
+        'flight',
+        'flight.mission.read',
+      );
     if (accessibleProjectIds.length === 0) {
       return [];
     }

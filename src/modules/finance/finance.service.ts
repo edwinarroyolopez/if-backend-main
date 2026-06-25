@@ -50,7 +50,9 @@ export class FinanceService implements ResourceScopeResolver, OnModuleInit {
         'Invoice request was not found',
       );
     }
-    const project = await this.projectsService.findById(invoiceRequest.projectId);
+    const project = await this.projectsService.findById(
+      invoiceRequest.projectId,
+    );
     return {
       resourceType: 'INVOICE',
       resourceId: invoiceRequest.id,
@@ -141,11 +143,12 @@ export class FinanceService implements ResourceScopeResolver, OnModuleInit {
       return [];
     }
 
-    const accessibleProjectIds = await this.projectsService.listAccessibleProjectIds(
-      principal,
-      'finance',
-      'finance.invoice.read',
-    );
+    const accessibleProjectIds =
+      await this.projectsService.listAccessibleProjectIds(
+        principal,
+        'finance',
+        'finance.invoice.read',
+      );
     if (accessibleProjectIds.length === 0) {
       return [];
     }

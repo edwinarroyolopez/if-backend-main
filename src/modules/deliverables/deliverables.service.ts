@@ -108,11 +108,12 @@ export class DeliverablesService
       return [];
     }
 
-    const accessibleProjectIds = await this.projectsService.listAccessibleProjectIds(
-      principal,
-      'deliverables',
-      'deliverables.deliverable.read',
-    );
+    const accessibleProjectIds =
+      await this.projectsService.listAccessibleProjectIds(
+        principal,
+        'deliverables',
+        'deliverables.deliverable.read',
+      );
     if (accessibleProjectIds.length === 0) {
       return [];
     }

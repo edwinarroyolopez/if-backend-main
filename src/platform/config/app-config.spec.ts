@@ -20,10 +20,14 @@ describe('app-config', () => {
       ARGON2_MEMORY_COST: '19456',
       ARGON2_TIME_COST: '2',
       ARGON2_PARALLELISM: '1',
+      IF_CONNECTORS_BASE_URL: 'http://127.0.0.1:7100/api/v1',
+      IF_CONNECTORS_TIMEOUT_MS: '5000',
     });
 
     expect(config.port).toBe(3000);
     expect(config.refreshCookieMaxAgeMs).toBeGreaterThan(0);
     expect(config.refreshCookieSameSite).toBe('lax');
+    expect(config.ifConnectorsBaseUrl).toBe('http://127.0.0.1:7100/api/v1');
+    expect(config.ifConnectorsTimeoutMs).toBe(5000);
   });
 });

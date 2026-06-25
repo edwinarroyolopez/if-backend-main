@@ -6,6 +6,20 @@ import { AuditLog, AuditLogDocument } from './audit.schema';
 
 export type AuditRecordInput = Omit<AuditLog, 'createdAt'>;
 
+export type AuditReadRecord = {
+  id: string;
+  _id: unknown;
+  organizationId?: string;
+  action: string;
+  actorId: string;
+  resourceType: string;
+  resourceId: string;
+  before?: Record<string, unknown>;
+  after?: Record<string, unknown>;
+  metadata?: Record<string, unknown>;
+  createdAt: Date;
+};
+
 @Injectable()
 export class AuditService {
   constructor(
@@ -29,4 +43,33 @@ export class AuditService {
       session ? { session } : undefined,
     );
   }
+
+  async findOne(filter: Record<string, unknown>) {
+    const audit = await this.auditModel.findOne(filter);
+    return audit ? toAuditReadRecord(audit) : null;
+  }
+
+  async findMany(filter: Record<string, unknown>, limit: number) {
+    const audits = await this.auditModel
+      .find(filter)
+      .sort({ createdAt: -1, _id: -1 })
+      .limit(limit);
+    return audits.map(toAuditReadRecord);
+  }
+}
+
+function toAuditReadRecord(audit: AuditLogDocument): AuditReadRecord {
+  return {
+    id: audit.id,
+    _id: audit._id,
+    organizationId: audit.organizationId,
+    action: audit.action,
+    actorId: audit.actorId,
+    resourceType: audit.resourceType,
+    resourceId: audit.resourceId,
+    before: audit.before,
+    after: audit.after,
+    metadata: audit.metadata,
+    createdAt: audit.createdAt,
+  };
 }

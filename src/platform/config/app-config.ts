@@ -25,6 +25,9 @@ export type ValidatedEnv = {
   superadminEmail: string;
   superadminName: string;
   superadminPassword?: string;
+  documentImportPreviewTokenSecret: string;
+  ifConnectorsBaseUrl: string;
+  ifConnectorsTimeoutMs: number;
 };
 
 export function validateEnv(rawEnv: Record<string, unknown>): ValidatedEnv {
@@ -81,10 +84,24 @@ export function validateEnv(rawEnv: Record<string, unknown>): ValidatedEnv {
       env.SUPERADMIN_EMAIL?.trim() || 'superadmin@inflight.local',
     superadminName: env.SUPERADMIN_NAME?.trim() || 'InflightOS Superadmin',
     superadminPassword: env.SUPERADMIN_PASSWORD?.trim(),
+    documentImportPreviewTokenSecret:
+      env.DOCUMENT_IMPORT_PREVIEW_TOKEN_SECRET?.trim() ||
+      'inflight-project-document-import-preview-v1',
+    ifConnectorsBaseUrl: requireValue(
+      env.IF_CONNECTORS_BASE_URL,
+      'IF_CONNECTORS_BASE_URL',
+    ).replace(/\/+$/, ''),
+    ifConnectorsTimeoutMs: parseInteger(
+      env.IF_CONNECTORS_TIMEOUT_MS,
+      'IF_CONNECTORS_TIMEOUT_MS',
+    ),
   };
 
   if (validated.corsOrigins.length === 0) {
     throw new Error('CORS_ORIGINS must not be empty');
+  }
+  if (validated.ifConnectorsTimeoutMs <= 0) {
+    throw new Error('IF_CONNECTORS_TIMEOUT_MS must be greater than zero');
   }
 
   return validated;

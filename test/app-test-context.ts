@@ -24,6 +24,10 @@ import {
   ServiceCredential,
   ServiceCredentialDocument,
 } from 'src/modules/integrations/service-credential.schema';
+import {
+  ProjectConnectorMirror,
+  ProjectConnectorMirrorDocument,
+} from 'src/modules/integrations/project-connector-mirror.schema';
 import { User, UserDocument } from 'src/platform/identity/user.schema';
 import {
   AuthSession,
@@ -44,6 +48,7 @@ type TestModels = {
   mediaBatches: Model<MediaBatchDocument>;
   serviceAccounts: Model<ServiceAccountDocument>;
   serviceCredentials: Model<ServiceCredentialDocument>;
+  projectConnectorMirrors: Model<ProjectConnectorMirrorDocument>;
   authSessions: Model<AuthSessionDocument>;
 };
 
@@ -118,6 +123,9 @@ function getModels(app: INestApplication): TestModels {
     ),
     serviceCredentials: app.get<Model<ServiceCredentialDocument>>(
       getModelToken(ServiceCredential.name),
+    ),
+    projectConnectorMirrors: app.get<Model<ProjectConnectorMirrorDocument>>(
+      getModelToken(ProjectConnectorMirror.name),
     ),
     authSessions: app.get<Model<AuthSessionDocument>>(
       getModelToken(AuthSession.name),

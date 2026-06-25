@@ -16,8 +16,17 @@ export type ProjectRoadmapDocument = HydratedDocument<ProjectRoadmap>;
 
 @Schema({ collection: 'project_roadmaps', timestamps: true })
 export class ProjectRoadmap {
+  @Prop({ type: String, index: true })
+  organizationId?: string;
+
   @Prop({ type: String, required: true, index: true, unique: true })
   projectId!: string;
+
+  @Prop({ type: String, index: true })
+  activeVersionId?: string;
+
+  @Prop({ type: String, index: true })
+  latestVersionId?: string;
 
   @Prop({ type: String, required: true })
   title!: string;

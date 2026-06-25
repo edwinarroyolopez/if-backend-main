@@ -57,7 +57,11 @@ export class ImageOpsController {
 
   @Get('media-batches')
   @RequirePermission('image.media_batch.read')
-  @ResolveResource({ type: 'MODULE', moduleKey: 'image', allowProjectScope: true })
+  @ResolveResource({
+    type: 'MODULE',
+    moduleKey: 'image',
+    allowProjectScope: true,
+  })
   async listMediaBatches(
     @CurrentPrincipal() principal: AuthenticatedPrincipal,
   ) {

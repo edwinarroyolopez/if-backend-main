@@ -8,14 +8,6 @@ import {
   Query,
   UseGuards,
 } from '@nestjs/common';
-import {
-  IsIn,
-  IsMongoId,
-  IsOptional,
-  IsString,
-  MaxLength,
-  MinLength,
-} from 'class-validator';
 import { CurrentPrincipal } from 'src/platform/access-control/current-principal.decorator';
 import { PermissionGuard } from 'src/platform/access-control/permission.guard';
 import { ReadOnlySessionGuard } from 'src/platform/access-control/read-only-session.guard';
@@ -27,54 +19,8 @@ import { AuthenticatedPrincipal } from 'src/common/types/authenticated-principal
 import { AppException } from 'src/common/errors/app-exception';
 import { REASON_CODES } from 'src/common/errors/reason-codes';
 import { JwtAuthGuard } from 'src/platform/sessions/jwt-auth.guard';
+import { CreateMissionDto, ListMissionsQueryDto } from './flight-ops.dto';
 import { FlightOpsService } from './flight-ops.service';
-
-class CreateMissionDto {
-  @IsString()
-  organizationId!: string;
-
-  @IsMongoId()
-  projectId!: string;
-
-  @IsString()
-  @MinLength(2)
-  @MaxLength(32)
-  key!: string;
-
-  @IsString()
-  @MinLength(3)
-  @MaxLength(160)
-  name!: string;
-
-  @IsOptional()
-  @IsIn(['DRAFT', 'PLANNED', 'READY', 'IN_PROGRESS'])
-  status?: 'DRAFT' | 'PLANNED' | 'READY' | 'IN_PROGRESS';
-}
-
-class ListMissionsQueryDto {
-  @IsOptional()
-  @IsMongoId()
-  projectId?: string;
-
-  @IsOptional()
-  @IsIn([
-    'DRAFT',
-    'PLANNED',
-    'READY',
-    'IN_PROGRESS',
-    'COMPLETED',
-    'CANCELLED',
-    'FAILED',
-  ])
-  status?:
-    | 'DRAFT'
-    | 'PLANNED'
-    | 'READY'
-    | 'IN_PROGRESS'
-    | 'COMPLETED'
-    | 'CANCELLED'
-    | 'FAILED';
-}
 
 @Controller('missions')
 @UseGuards(JwtAuthGuard, ReadOnlySessionGuard, PermissionGuard)
@@ -83,16 +29,17 @@ export class FlightOpsController {
 
   @Get()
   @RequirePermission('flight.mission.read')
-  @ResolveResource({ type: 'MODULE', moduleKey: 'flight', allowProjectScope: true })
+  @ResolveResource({
+    type: 'MODULE',
+    moduleKey: 'flight',
+    allowProjectScope: true,
+  })
   async listMissions(
     @CurrentPrincipal() principal: AuthenticatedPrincipal,
     @Query() query: ListMissionsQueryDto,
   ) {
     return {
-      items: await this.flightOpsService.listMissions(
-        principal,
-        query,
-      ),
+      items: await this.flightOpsService.listMissions(principal, query),
     };
   }
 

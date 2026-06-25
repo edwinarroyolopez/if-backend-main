@@ -1,6 +1,5 @@
 import { createHash } from 'node:crypto';
-import { readFileSync } from 'node:fs';
-import { join } from 'node:path';
+import { loadBackendPromptTemplate } from '../prompt-templates';
 import type { ProjectReadModel } from '../projects.service';
 import {
   DOCUMENTATION_PROMPT_PURPOSE,
@@ -9,16 +8,7 @@ import {
 } from './constants';
 
 export function loadDocumentationPromptTemplate() {
-  return readFileSync(
-    join(
-      process.cwd(),
-      '..',
-      'ai',
-      'prompts',
-      'project-documentation-interview-v1.md',
-    ),
-    'utf8',
-  );
+  return loadBackendPromptTemplate('project-documentation-interview-v1.md');
 }
 
 export function buildDocumentationPromptResponse(project: ProjectReadModel) {

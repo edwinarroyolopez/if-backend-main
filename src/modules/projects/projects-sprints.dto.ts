@@ -57,3 +57,12 @@ export class MoveProjectSprintItemDto {
   @Min(1)
   expectedVersion!: number;
 }
+
+export class RemoveProjectSprintItemDto {
+  @IsMongoId()
+  itemId!: string;
+
+  @IsInt()
+  @Min(1)
+  expectedVersion!: number;
+}

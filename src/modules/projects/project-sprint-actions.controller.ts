@@ -11,7 +11,10 @@ import {
   ProjectsControllerRoute,
   requireIdempotencyKey,
 } from './projects-controller.shared';
-import { MoveProjectSprintItemDto } from './projects-sprints.dto';
+import {
+  MoveProjectSprintItemDto,
+  RemoveProjectSprintItemDto,
+} from './projects-sprints.dto';
 import { ProjectsService } from './projects.service';
 
 @ProjectsControllerRoute()
@@ -99,6 +102,29 @@ export class ProjectSprintActionsController {
         projectId,
         sprintId,
         dto,
+        session,
+      ),
+    );
+  }
+
+  @Post(':projectId/sprints/:sprintId/remove-item')
+  @RequirePermission('projects.sprint.manage')
+  @ResolveResource(PROJECT_RESOURCE)
+  async removeProjectSprintItem(
+    @CurrentPrincipal() principal: AuthenticatedPrincipal,
+    @Param('projectId') projectId: string,
+    @Param('sprintId') sprintId: string,
+    @Body() dto: RemoveProjectSprintItemDto,
+    @Headers('idempotency-key') idempotencyKey: string | undefined,
+  ) {
+    requireIdempotencyKey(idempotencyKey);
+    return this.transactionManagerService.runInTransaction((session) =>
+      this.projectsService.removeProjectSprintItemForRequest(
+        principal,
+        projectId,
+        sprintId,
+        dto,
+        idempotencyKey,
         session,
       ),
     );

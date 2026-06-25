@@ -122,6 +122,12 @@ export const PROJECT_ACTIVITY_EVENT_DEFINITIONS: Record<
     title: 'Card movida en Scrum',
     resourceKind: 'SPRINT_ITEM',
   },
+  'projects.sprint.remove_item': {
+    type: 'SPRINT_ITEM_REMOVED',
+    category: 'SCRUM',
+    title: 'Card devuelta al backlog',
+    resourceKind: 'SPRINT_ITEM',
+  },
   'projects.sprint.complete': {
     type: 'SPRINT_COMPLETED',
     category: 'SCRUM',

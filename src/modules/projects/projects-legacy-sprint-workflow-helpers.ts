@@ -45,6 +45,31 @@ export abstract class ProjectsLegacySprintWorkflowHelpers extends ProjectsLegacy
       await item.save({ session });
     }
   }
+  protected async compactSprintColumnOrder(
+    project: ProjectDocument,
+    sprintId: string,
+    boardStatus: ProjectSprintItemBoardStatus,
+    actorId: string,
+    session: ClientSession,
+  ) {
+    const items = await this.projectSprintItemModel
+      .find({
+        organizationId: project.organizationId,
+        projectId: project.id,
+        sprintId,
+        boardStatus,
+      })
+      .sort({ order: 1, updatedAt: 1 })
+      .session(session);
+    for (let order = 0; order < items.length; order += 1) {
+      const item = items[order];
+      if (!item || item.order === order) continue;
+      item.order = order;
+      item.version += 1;
+      item.updatedBy = actorId;
+      await item.save({ session });
+    }
+  }
   protected async finishProjectSprintForRequest(
     principal: AuthenticatedPrincipal,
     projectId: string,

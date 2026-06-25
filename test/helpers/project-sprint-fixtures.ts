@@ -169,6 +169,17 @@ export async function expectSprintAccessRestrictions(
       expectedVersion: input.doneItem.version as number,
     })
     .expect(403);
+  await context.http
+    .post(
+      `/api/v1/projects/${input.projectId}/sprints/${input.sprintId}/remove-item`,
+    )
+    .set('Authorization', `Bearer ${secondOrg.ownerAccessToken}`)
+    .set('Idempotency-Key', 'sprint-cross-remove')
+    .send({
+      itemId: input.doneItem.id as string,
+      expectedVersion: input.doneItem.version as number,
+    })
+    .expect(403);
 
   const readOnlyLogin = await loginNativeUser(context, {
     email: input.ownerEmail,
@@ -218,6 +229,17 @@ export async function expectSprintAccessRestrictions(
       itemId: input.doneItem.id as string,
       toStatus: 'BLOCKED',
       order: 0,
+      expectedVersion: input.doneItem.version as number,
+    })
+    .expect(403);
+  await context.http
+    .post(
+      `/api/v1/projects/${input.projectId}/sprints/${input.sprintId}/remove-item`,
+    )
+    .set('Authorization', `Bearer ${readOnlyToken}`)
+    .set('Idempotency-Key', 'sprint-readonly-remove')
+    .send({
+      itemId: input.doneItem.id as string,
       expectedVersion: input.doneItem.version as number,
     })
     .expect(403);

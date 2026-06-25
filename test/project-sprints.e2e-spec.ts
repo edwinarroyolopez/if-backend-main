@@ -133,6 +133,49 @@ describe('Project sprints', () => {
         .send({ backlogItemIds: [readyOne.id] })
         .expect(409);
 
+      const removeSprint = await context.http
+        .post(`/api/v1/projects/${fixtures.projectId}/sprints`)
+        .set('Authorization', `Bearer ${ownerAccessToken}`)
+        .set('Idempotency-Key', 'sprint-create-remove')
+        .send({ name: 'Sprint Remove Item' })
+        .expect(201);
+      const removeBacklog = await createSprintBacklogItem(
+        context,
+        ownerAccessToken,
+        fixtures.projectId,
+        'remove-ready',
+        'READY',
+      );
+      const removePlanned = await context.http
+        .post(
+          `/api/v1/projects/${fixtures.projectId}/sprints/${removeSprint.body.id as string}/add-items`,
+        )
+        .set('Authorization', `Bearer ${ownerAccessToken}`)
+        .set('Idempotency-Key', 'sprint-add-remove')
+        .send({ backlogItemIds: [removeBacklog.id] })
+        .expect(201);
+      const removed = await context.http
+        .post(
+          `/api/v1/projects/${fixtures.projectId}/sprints/${removeSprint.body.id as string}/remove-item`,
+        )
+        .set('Authorization', `Bearer ${ownerAccessToken}`)
+        .set('Idempotency-Key', 'sprint-remove-item')
+        .send({
+          itemId: removePlanned.body.items[0].id as string,
+          expectedVersion: removePlanned.body.items[0].version as number,
+        })
+        .expect(201);
+      expect(removed.body.items).toHaveLength(0);
+      const releasedBacklog = await context.http
+        .get(`/api/v1/projects/${fixtures.projectId}/backlog`)
+        .set('Authorization', `Bearer ${ownerAccessToken}`)
+        .expect(200);
+      expect(
+        releasedBacklog.body.items.find(
+          (item: { id: string }) => item.id === removeBacklog.id,
+        ).status,
+      ).toBe('READY');
+
       await context.http
         .post(
           `/api/v1/projects/${fixtures.projectId}/sprints/${sprint.body.id as string}/board-move`,
@@ -348,6 +391,7 @@ describe('Project sprints', () => {
       for (const action of [
         'projects.sprint.create',
         'projects.sprint.add_items',
+        'projects.sprint.remove_item',
         'projects.sprint.start',
         'projects.sprint.board_move',
         'projects.sprint.complete',

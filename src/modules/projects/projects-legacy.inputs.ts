@@ -117,6 +117,10 @@ export type ProjectSprintBoardMoveInput = {
   order: number;
   expectedVersion: number;
 };
+export type ProjectSprintRemoveItemInput = {
+  itemId: string;
+  expectedVersion: number;
+};
 export type ProjectMembershipInput = {
   userId?: string;
   displayName: string;

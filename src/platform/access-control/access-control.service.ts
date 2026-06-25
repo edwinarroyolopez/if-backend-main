@@ -20,8 +20,9 @@ export class AccessControlService implements OnModuleInit {
   ) {}
 
   async onModuleInit() {
+    await this.permissionCatalog.seedPermissions();
     await Promise.all([
-      this.permissionCatalog.seedPermissions(),
+      this.roleManager.reconcileSystemDefinedRolePermissions(),
       this.accessPolicyModel.updateOne(
         { key: 'GLOBAL' },
         { $setOnInsert: { key: 'GLOBAL', version: 1 } },

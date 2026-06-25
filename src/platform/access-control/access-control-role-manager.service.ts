@@ -203,6 +203,73 @@ export class AccessControlRoleManagerService {
     return assignment;
   }
 
+  async reconcileSystemDefinedRolePermissions() {
+    const permissions = await this.permissionDefinitionModel.find({
+      status: 'ACTIVE',
+    });
+    const permissionByKey = new Map(
+      permissions.map((permission) => [permission.key, permission]),
+    );
+    const activePermissionKeys = permissions.map(
+      (permission) => permission.key,
+    );
+    const expectedPermissionKeysByRoleKey = new Map<string, readonly string[]>([
+      ...Object.entries(DEFAULT_ORG_ROLE_TEMPLATES),
+      [SUPERADMIN_ROLE_KEY, activePermissionKeys],
+    ]);
+    const roles = await this.roleModel.find({
+      key: { $in: [...expectedPermissionKeysByRoleKey.keys()] },
+      status: 'ACTIVE',
+      systemDefined: true,
+    });
+
+    for (const role of roles) {
+      const expectedPermissionKeys = expectedPermissionKeysByRoleKey.get(
+        role.key,
+      );
+      if (!expectedPermissionKeys) continue;
+
+      const uniqueExpectedPermissionKeys = [...new Set(expectedPermissionKeys)];
+      const expectedPermissionIds = uniqueExpectedPermissionKeys
+        .map((permissionKey) => permissionByKey.get(permissionKey)?.id)
+        .filter(
+          (permissionId): permissionId is string =>
+            typeof permissionId === 'string',
+        );
+      if (
+        expectedPermissionIds.length !== uniqueExpectedPermissionKeys.length
+      ) {
+        continue;
+      }
+
+      const existingPermissions = await this.rolePermissionModel.find({
+        roleId: role.id,
+      });
+      const existingPermissionIds = existingPermissions.map(
+        (permission) => permission.permissionId,
+      );
+      const alreadySynced =
+        existingPermissionIds.length === expectedPermissionIds.length &&
+        expectedPermissionIds.every((permissionId) =>
+          existingPermissionIds.includes(permissionId),
+        );
+      if (alreadySynced) continue;
+
+      await this.rolePermissionModel.deleteMany({ roleId: role.id });
+      if (expectedPermissionIds.length > 0) {
+        await this.rolePermissionModel.insertMany(
+          expectedPermissionIds.map((permissionId) => ({
+            roleId: role.id,
+            permissionId,
+          })),
+          { ordered: true },
+        );
+      }
+      role.version += 1;
+      await role.save();
+    }
+  }
+
   async createDefaultRolesForOrganization(
     organizationId: string,
     actorUserId: string,

@@ -127,7 +127,12 @@ export class Mission {
 export const MissionSchema = SchemaFactory.createForClass(Mission);
 
 MissionSchema.index({ organizationId: 1, key: 1 }, { unique: true });
-MissionSchema.index({ organizationId: 1, projectId: 1, status: 1, createdAt: -1 });
+MissionSchema.index({
+  organizationId: 1,
+  projectId: 1,
+  status: 1,
+  createdAt: -1,
+});
 MissionSchema.index({
   organizationId: 1,
   assignedPilotId: 1,

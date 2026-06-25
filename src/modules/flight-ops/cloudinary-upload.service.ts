@@ -62,7 +62,13 @@ export class CloudinaryUploadService {
       .digest('hex');
 
     const formData = new FormData();
-    formData.append('file', new Blob([new Uint8Array(input.file.buffer)], { type: input.file.mimetype }), input.file.originalname);
+    formData.append(
+      'file',
+      new Blob([new Uint8Array(input.file.buffer)], {
+        type: input.file.mimetype,
+      }),
+      input.file.originalname,
+    );
     formData.append('api_key', apiKey);
     formData.append('signature', signature);
     for (const [key, value] of Object.entries(paramsToSign)) {

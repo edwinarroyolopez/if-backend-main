@@ -20,7 +20,9 @@ const MISSION_EVENTS = new Set([
 ]);
 
 @Injectable()
-export class MissionNotificationsHandler implements DomainEventHandler, OnModuleInit {
+export class MissionNotificationsHandler
+  implements DomainEventHandler, OnModuleInit
+{
   constructor(
     private readonly outboxRelayService: OutboxRelayService,
     private readonly notificationsService: NotificationsService,
@@ -37,11 +39,17 @@ export class MissionNotificationsHandler implements DomainEventHandler, OnModule
   }
 
   async handle(event: Record<string, unknown>): Promise<void> {
-    const eventType = String(event.eventType ?? 'mission.updated');
-    const eventId = String(event.eventId);
-    const organizationId = String(event.organizationId);
-    const missionId = String(event.missionId);
-    const occurredAt = String(event.occurredAt);
+    const eventType =
+      typeof event.eventType === 'string' ? event.eventType : 'mission.updated';
+    const eventId = typeof event.eventId === 'string' ? event.eventId : '';
+    const organizationId =
+      typeof event.organizationId === 'string' ? event.organizationId : '';
+    const missionId =
+      typeof event.missionId === 'string' ? event.missionId : '';
+    const occurredAt =
+      typeof event.occurredAt === 'string'
+        ? event.occurredAt
+        : new Date().toISOString();
 
     this.realtimeService.emit({
       eventType: 'mission.updated',
@@ -71,18 +79,25 @@ export class MissionNotificationsHandler implements DomainEventHandler, OnModule
     );
   }
 
-  private async resolveRecipients(eventType: string, event: Record<string, unknown>) {
+  private async resolveRecipients(
+    eventType: string,
+    event: Record<string, unknown>,
+  ) {
     const recipients = new Set<string>();
     const assignedPilotId = optionalString(event.assignedPilotId);
     const previousPilotId = optionalString(event.previousPilotId);
-    const previousAssignmentStatus = optionalString(event.previousAssignmentStatus);
+    const previousAssignmentStatus = optionalString(
+      event.previousAssignmentStatus,
+    );
     const createdBy = optionalString(event.createdBy);
     const assignedBy = optionalString(event.assignedBy);
 
     if (
-      ['MissionRequested.v1', 'MissionAssigned.v1', 'MissionCancelled.v1'].includes(
-        eventType,
-      ) &&
+      [
+        'MissionRequested.v1',
+        'MissionAssigned.v1',
+        'MissionCancelled.v1',
+      ].includes(eventType) &&
       assignedPilotId
     ) {
       recipients.add(assignedPilotId);
@@ -113,7 +128,11 @@ export class MissionNotificationsHandler implements DomainEventHandler, OnModule
       if (createdBy && (await this.isActiveUser(createdBy))) {
         recipients.add(createdBy);
       }
-      if (assignedBy && assignedBy !== createdBy && (await this.isActiveUser(assignedBy))) {
+      if (
+        assignedBy &&
+        assignedBy !== createdBy &&
+        (await this.isActiveUser(assignedBy))
+      ) {
         recipients.add(assignedBy);
       }
     }

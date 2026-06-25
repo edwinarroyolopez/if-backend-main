@@ -3,7 +3,10 @@ import { HydratedDocument } from 'mongoose';
 
 export type NotificationDocument = HydratedDocument<Notification>;
 
-@Schema({ collection: 'notifications', timestamps: { createdAt: true, updatedAt: false } })
+@Schema({
+  collection: 'notifications',
+  timestamps: { createdAt: true, updatedAt: false },
+})
 export class Notification {
   @Prop({ type: String, required: true, index: true })
   organizationId!: string;
@@ -37,5 +40,13 @@ export class Notification {
 
 export const NotificationSchema = SchemaFactory.createForClass(Notification);
 
-NotificationSchema.index({ organizationId: 1, userId: 1, readAt: 1, createdAt: -1 });
-NotificationSchema.index({ organizationId: 1, userId: 1, eventId: 1 }, { unique: true });
+NotificationSchema.index({
+  organizationId: 1,
+  userId: 1,
+  readAt: 1,
+  createdAt: -1,
+});
+NotificationSchema.index(
+  { organizationId: 1, userId: 1, eventId: 1 },
+  { unique: true },
+);

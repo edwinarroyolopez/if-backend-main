@@ -40,4 +40,8 @@ export class MissionMediaAsset {
 export const MissionMediaAssetSchema =
   SchemaFactory.createForClass(MissionMediaAsset);
 
-MissionMediaAssetSchema.index({ organizationId: 1, missionId: 1, uploadedAt: -1 });
+MissionMediaAssetSchema.index({
+  organizationId: 1,
+  missionId: 1,
+  uploadedAt: -1,
+});

@@ -16,13 +16,16 @@ import { TransactionManagerService } from 'src/platform/database/transaction-man
 import { OutboxService } from 'src/platform/events/outbox.service';
 import { IdempotencyService } from 'src/platform/idempotency/idempotency.service';
 import { IdentityService } from 'src/platform/identity/identity.service';
-import { CloudinaryUploadService, UploadableFile } from './cloudinary-upload.service';
+import {
+  CloudinaryUploadService,
+  UploadableFile,
+} from './cloudinary-upload.service';
 import { CreateMissionDto, ListMissionsQueryDto } from './flight-ops.dto';
 import {
   MissionMediaAsset,
   MissionMediaAssetDocument,
 } from './mission-media-asset.schema';
-import { AssignmentStatus, Mission, MissionDocument } from './mission.schema';
+import { Mission, MissionDocument } from './mission.schema';
 
 type MissionEventInput = {
   eventType: string;
@@ -62,7 +65,11 @@ export class FlightOpsService implements ResourceScopeResolver, OnModuleInit {
   async resolve(reference: ResourceReference): Promise<ResourceScopeContext> {
     const mission = await this.missionModel.findById(reference.resourceId);
     if (!mission) {
-      throw new AppException(404, REASON_CODES.RESOURCE_NOT_FOUND, 'Mission was not found');
+      throw new AppException(
+        404,
+        REASON_CODES.RESOURCE_NOT_FOUND,
+        'Mission was not found',
+      );
     }
     const project = await this.projectsService.findById(mission.projectId);
 
@@ -82,10 +89,17 @@ export class FlightOpsService implements ResourceScopeResolver, OnModuleInit {
     };
   }
 
-  async createMission(principal: AuthenticatedPrincipal, dto: CreateMissionDto) {
+  async createMission(
+    principal: AuthenticatedPrincipal,
+    dto: CreateMissionDto,
+  ) {
     const project = await this.projectsService.findById(dto.projectId);
     if (!project) {
-      throw new AppException(404, REASON_CODES.RESOURCE_NOT_FOUND, 'Project was not found');
+      throw new AppException(
+        404,
+        REASON_CODES.RESOURCE_NOT_FOUND,
+        'Project was not found',
+      );
     }
     if (project.organizationId !== dto.organizationId) {
       throw new AppException(
@@ -111,7 +125,9 @@ export class FlightOpsService implements ResourceScopeResolver, OnModuleInit {
             coordinates: dto.coordinates,
             scheduledWindow: normalizeScheduledWindow(dto.scheduledWindow),
             priority: dto.priority ?? 'NORMAL',
-            customerServiceObservations: cleanOptional(dto.customerServiceObservations),
+            customerServiceObservations: cleanOptional(
+              dto.customerServiceObservations,
+            ),
             assignedPilotId: cleanOptional(dto.assignedPilotId) ?? null,
             assignmentStatus: dto.assignedPilotId ? 'ASSIGNED' : 'UNASSIGNED',
             assignedAt: dto.assignedPilotId ? now : undefined,
@@ -164,17 +180,21 @@ export class FlightOpsService implements ResourceScopeResolver, OnModuleInit {
     return this.toMissionResponse(mission, media);
   }
 
-  async listMissions(principal: AuthenticatedPrincipal, filters: ListMissionsQueryDto) {
+  async listMissions(
+    principal: AuthenticatedPrincipal,
+    filters: ListMissionsQueryDto,
+  ) {
     const organizationId = principal.activeOrganizationId;
     if (!organizationId) {
       return [];
     }
 
-    const accessibleProjectIds = await this.projectsService.listAccessibleProjectIds(
-      principal,
-      'flight',
-      'flight.request.read',
-    );
+    const accessibleProjectIds =
+      await this.projectsService.listAccessibleProjectIds(
+        principal,
+        'flight',
+        'flight.request.read',
+      );
     if (accessibleProjectIds.length === 0) {
       return [];
     }
@@ -202,8 +222,12 @@ export class FlightOpsService implements ResourceScopeResolver, OnModuleInit {
       query.assignedPilotId = principal.sub;
     }
 
-    const missions = await this.missionModel.find(query).sort({ createdAt: -1, _id: 1 });
-    return Promise.all(missions.map((mission) => this.toMissionSummary(mission)));
+    const missions = await this.missionModel
+      .find(query)
+      .sort({ createdAt: -1, _id: 1 });
+    return Promise.all(
+      missions.map((mission) => this.toMissionSummary(mission)),
+    );
   }
 
   async assignMission(
@@ -212,83 +236,145 @@ export class FlightOpsService implements ResourceScopeResolver, OnModuleInit {
     assignedPilotId: string,
     idempotencyKey: string,
   ) {
-    return this.runIdempotent(principal, idempotencyKey, `mission.assign:${missionId}`, async (recordId, session) => {
-      const mission = await this.findMissionOrThrow(missionId, session);
-      if (['IN_PROGRESS', 'COMPLETED', 'CANCELLED', 'FAILED'].includes(mission.status)) {
-        throw new AppException(409, REASON_CODES.MISSION_NOT_ASSIGNABLE, 'Mission cannot be assigned from the current state');
-      }
-      const previousPilotId = mission.assignedPilotId ?? undefined;
-      const previousAssignmentStatus = mission.assignmentStatus;
-      const now = new Date();
-      const before = toMissionState(mission);
-      mission.assignedPilotId = assignedPilotId;
-      mission.assignmentStatus = 'ASSIGNED';
-      mission.assignedAt = now;
-      mission.assignedBy = principal.sub;
-      mission.pilotAcceptedAt = undefined;
-      mission.pilotRejectedAt = undefined;
-      mission.pilotRejectionObservations = undefined;
-      await mission.save({ session });
-      const eventType = previousPilotId ? 'MissionReassigned.v1' : 'MissionAssigned.v1';
-      const eventId = `${eventType}:${mission.id}:${idempotencyKey}`;
-      await this.recordAudit({
-        principal,
-        mission,
-        action: previousPilotId ? 'flight.request.reassign' : 'flight.request.assign',
-        permissionKey: 'flight.request.assign',
-        before,
-        after: toMissionState(mission),
-        metadata: { previousPilotId, assignedPilotId, previousAssignmentStatus },
-        session,
-      });
-      await this.appendMissionEvent({
-        eventType,
-        eventId,
-        mission,
-        actorId: principal.sub,
-        occurredAt: now,
-        payload: { previousPilotId, previousAssignmentStatus },
-        session,
-      });
-      const response = this.commandResponse(mission, eventId);
-      await this.idempotencyService.complete(recordId, 200, response, session);
-      return response;
-    });
+    return this.runIdempotent(
+      principal,
+      idempotencyKey,
+      `mission.assign:${missionId}`,
+      async (recordId, session) => {
+        const mission = await this.findMissionOrThrow(missionId, session);
+        if (
+          ['IN_PROGRESS', 'COMPLETED', 'CANCELLED', 'FAILED'].includes(
+            mission.status,
+          )
+        ) {
+          throw new AppException(
+            409,
+            REASON_CODES.MISSION_NOT_ASSIGNABLE,
+            'Mission cannot be assigned from the current state',
+          );
+        }
+        const previousPilotId = mission.assignedPilotId ?? undefined;
+        const previousAssignmentStatus = mission.assignmentStatus;
+        const now = new Date();
+        const before = toMissionState(mission);
+        mission.assignedPilotId = assignedPilotId;
+        mission.assignmentStatus = 'ASSIGNED';
+        mission.assignedAt = now;
+        mission.assignedBy = principal.sub;
+        mission.pilotAcceptedAt = undefined;
+        mission.pilotRejectedAt = undefined;
+        mission.pilotRejectionObservations = undefined;
+        await mission.save({ session });
+        const eventType = previousPilotId
+          ? 'MissionReassigned.v1'
+          : 'MissionAssigned.v1';
+        const eventId = `${eventType}:${mission.id}:${idempotencyKey}`;
+        await this.recordAudit({
+          principal,
+          mission,
+          action: previousPilotId
+            ? 'flight.request.reassign'
+            : 'flight.request.assign',
+          permissionKey: 'flight.request.assign',
+          before,
+          after: toMissionState(mission),
+          metadata: {
+            previousPilotId,
+            assignedPilotId,
+            previousAssignmentStatus,
+          },
+          session,
+        });
+        await this.appendMissionEvent({
+          eventType,
+          eventId,
+          mission,
+          actorId: principal.sub,
+          occurredAt: now,
+          payload: { previousPilotId, previousAssignmentStatus },
+          session,
+        });
+        const response = this.commandResponse(mission, eventId);
+        await this.idempotencyService.complete(
+          recordId,
+          200,
+          response,
+          session,
+        );
+        return response;
+      },
+    );
   }
 
-  async acceptMission(principal: AuthenticatedPrincipal, missionId: string, idempotencyKey: string) {
-    return this.runIdempotent(principal, idempotencyKey, `mission.accept:${missionId}`, async (recordId, session) => {
-      const mission = await this.findMissionOrThrow(missionId, session);
-      this.assertAssignedPilot(principal, mission);
-      if (mission.status === 'READY' && mission.assignmentStatus === 'ACCEPTED') {
-        const response = this.commandResponse(mission);
-        await this.idempotencyService.complete(recordId, 200, response, session);
+  async acceptMission(
+    principal: AuthenticatedPrincipal,
+    missionId: string,
+    idempotencyKey: string,
+  ) {
+    return this.runIdempotent(
+      principal,
+      idempotencyKey,
+      `mission.accept:${missionId}`,
+      async (recordId, session) => {
+        const mission = await this.findMissionOrThrow(missionId, session);
+        this.assertAssignedPilot(principal, mission);
+        if (
+          mission.status === 'READY' &&
+          mission.assignmentStatus === 'ACCEPTED'
+        ) {
+          const response = this.commandResponse(mission);
+          await this.idempotencyService.complete(
+            recordId,
+            200,
+            response,
+            session,
+          );
+          return response;
+        }
+        if (
+          mission.status !== 'PLANNED' ||
+          mission.assignmentStatus !== 'ASSIGNED'
+        ) {
+          throw new AppException(
+            409,
+            REASON_CODES.RESOURCE_STATE_CONFLICT,
+            'Mission cannot be accepted from the current state',
+          );
+        }
+        const before = toMissionState(mission);
+        const now = new Date();
+        mission.status = 'READY';
+        mission.assignmentStatus = 'ACCEPTED';
+        mission.pilotAcceptedAt = now;
+        await mission.save({ session });
+        const eventId = `MissionAccepted.v1:${mission.id}:${idempotencyKey}`;
+        await this.recordAudit({
+          principal,
+          mission,
+          action: 'flight.request.accept',
+          permissionKey: 'flight.request.start',
+          before,
+          after: toMissionState(mission),
+          session,
+        });
+        await this.appendMissionEvent({
+          eventType: 'MissionAccepted.v1',
+          eventId,
+          mission,
+          actorId: principal.sub,
+          occurredAt: now,
+          session,
+        });
+        const response = this.commandResponse(mission, eventId);
+        await this.idempotencyService.complete(
+          recordId,
+          200,
+          response,
+          session,
+        );
         return response;
-      }
-      if (mission.status !== 'PLANNED' || mission.assignmentStatus !== 'ASSIGNED') {
-        throw new AppException(409, REASON_CODES.RESOURCE_STATE_CONFLICT, 'Mission cannot be accepted from the current state');
-      }
-      const before = toMissionState(mission);
-      const now = new Date();
-      mission.status = 'READY';
-      mission.assignmentStatus = 'ACCEPTED';
-      mission.pilotAcceptedAt = now;
-      await mission.save({ session });
-      const eventId = `MissionAccepted.v1:${mission.id}:${idempotencyKey}`;
-      await this.recordAudit({
-        principal,
-        mission,
-        action: 'flight.request.accept',
-        permissionKey: 'flight.request.start',
-        before,
-        after: toMissionState(mission),
-        session,
-      });
-      await this.appendMissionEvent({ eventType: 'MissionAccepted.v1', eventId, mission, actorId: principal.sub, occurredAt: now, session });
-      const response = this.commandResponse(mission, eventId);
-      await this.idempotencyService.complete(recordId, 200, response, session);
-      return response;
-    });
+      },
+    );
   }
 
   async rejectMission(
@@ -299,61 +385,132 @@ export class FlightOpsService implements ResourceScopeResolver, OnModuleInit {
   ) {
     const trimmed = observations.trim();
     if (!trimmed) {
-      throw new AppException(400, REASON_CODES.MISSION_REJECTION_OBSERVATION_REQUIRED, 'Rejection observations are required');
+      throw new AppException(
+        400,
+        REASON_CODES.MISSION_REJECTION_OBSERVATION_REQUIRED,
+        'Rejection observations are required',
+      );
     }
-    return this.runIdempotent(principal, idempotencyKey, `mission.reject:${missionId}`, async (recordId, session) => {
-      const mission = await this.findMissionOrThrow(missionId, session);
-      this.assertAssignedPilot(principal, mission);
-      if (mission.status === 'READY' && mission.assignmentStatus === 'ACCEPTED') {
-        throw new AppException(409, REASON_CODES.MISSION_REJECT_AFTER_ACCEPT_NOT_ALLOWED, 'Accepted missions cannot be rejected');
-      }
-      if (mission.status !== 'PLANNED' || mission.assignmentStatus !== 'ASSIGNED') {
-        throw new AppException(409, REASON_CODES.RESOURCE_STATE_CONFLICT, 'Mission cannot be rejected from the current state');
-      }
-      const before = toMissionState(mission);
-      const now = new Date();
-      mission.assignmentStatus = 'REJECTED';
-      mission.pilotRejectedAt = now;
-      mission.pilotRejectionObservations = trimmed;
-      await mission.save({ session });
-      const eventId = `MissionRejected.v1:${mission.id}:${idempotencyKey}`;
-      await this.recordAudit({
-        principal,
-        mission,
-        action: 'flight.request.reject',
-        permissionKey: 'flight.request.start',
-        before,
-        after: toMissionState(mission),
-        metadata: { hasObservations: true },
-        session,
-      });
-      await this.appendMissionEvent({ eventType: 'MissionRejected.v1', eventId, mission, actorId: principal.sub, occurredAt: now, session });
-      const response = this.commandResponse(mission, eventId);
-      await this.idempotencyService.complete(recordId, 200, response, session);
-      return response;
-    });
+    return this.runIdempotent(
+      principal,
+      idempotencyKey,
+      `mission.reject:${missionId}`,
+      async (recordId, session) => {
+        const mission = await this.findMissionOrThrow(missionId, session);
+        this.assertAssignedPilot(principal, mission);
+        if (
+          mission.status === 'READY' &&
+          mission.assignmentStatus === 'ACCEPTED'
+        ) {
+          throw new AppException(
+            409,
+            REASON_CODES.MISSION_REJECT_AFTER_ACCEPT_NOT_ALLOWED,
+            'Accepted missions cannot be rejected',
+          );
+        }
+        if (
+          mission.status !== 'PLANNED' ||
+          mission.assignmentStatus !== 'ASSIGNED'
+        ) {
+          throw new AppException(
+            409,
+            REASON_CODES.RESOURCE_STATE_CONFLICT,
+            'Mission cannot be rejected from the current state',
+          );
+        }
+        const before = toMissionState(mission);
+        const now = new Date();
+        mission.assignmentStatus = 'REJECTED';
+        mission.pilotRejectedAt = now;
+        mission.pilotRejectionObservations = trimmed;
+        await mission.save({ session });
+        const eventId = `MissionRejected.v1:${mission.id}:${idempotencyKey}`;
+        await this.recordAudit({
+          principal,
+          mission,
+          action: 'flight.request.reject',
+          permissionKey: 'flight.request.start',
+          before,
+          after: toMissionState(mission),
+          metadata: { hasObservations: true },
+          session,
+        });
+        await this.appendMissionEvent({
+          eventType: 'MissionRejected.v1',
+          eventId,
+          mission,
+          actorId: principal.sub,
+          occurredAt: now,
+          session,
+        });
+        const response = this.commandResponse(mission, eventId);
+        await this.idempotencyService.complete(
+          recordId,
+          200,
+          response,
+          session,
+        );
+        return response;
+      },
+    );
   }
 
-  async startMission(principal: AuthenticatedPrincipal, missionId: string, idempotencyKey: string) {
-    return this.runIdempotent(principal, idempotencyKey, `mission.start:${missionId}`, async (recordId, session) => {
-      const mission = await this.findMissionOrThrow(missionId, session);
-      this.assertAssignedPilot(principal, mission);
-      if (mission.status !== 'READY' || mission.assignmentStatus !== 'ACCEPTED') {
-        throw new AppException(409, REASON_CODES.MISSION_PILOT_ACCEPTANCE_REQUIRED, 'Mission must be accepted before start');
-      }
-      const before = toMissionState(mission);
-      const now = new Date();
-      mission.status = 'IN_PROGRESS';
-      mission.startedAt = now;
-      mission.startedBy = principal.sub;
-      await mission.save({ session });
-      const eventId = `MissionStarted.v1:${mission.id}:${idempotencyKey}`;
-      await this.recordAudit({ principal, mission, action: 'flight.request.start', permissionKey: 'flight.request.start', before, after: toMissionState(mission), session });
-      await this.appendMissionEvent({ eventType: 'MissionStarted.v1', eventId, mission, actorId: principal.sub, occurredAt: now, session });
-      const response = this.commandResponse(mission, eventId);
-      await this.idempotencyService.complete(recordId, 200, response, session);
-      return response;
-    });
+  async startMission(
+    principal: AuthenticatedPrincipal,
+    missionId: string,
+    idempotencyKey: string,
+  ) {
+    return this.runIdempotent(
+      principal,
+      idempotencyKey,
+      `mission.start:${missionId}`,
+      async (recordId, session) => {
+        const mission = await this.findMissionOrThrow(missionId, session);
+        this.assertAssignedPilot(principal, mission);
+        if (
+          mission.status !== 'READY' ||
+          mission.assignmentStatus !== 'ACCEPTED'
+        ) {
+          throw new AppException(
+            409,
+            REASON_CODES.MISSION_PILOT_ACCEPTANCE_REQUIRED,
+            'Mission must be accepted before start',
+          );
+        }
+        const before = toMissionState(mission);
+        const now = new Date();
+        mission.status = 'IN_PROGRESS';
+        mission.startedAt = now;
+        mission.startedBy = principal.sub;
+        await mission.save({ session });
+        const eventId = `MissionStarted.v1:${mission.id}:${idempotencyKey}`;
+        await this.recordAudit({
+          principal,
+          mission,
+          action: 'flight.request.start',
+          permissionKey: 'flight.request.start',
+          before,
+          after: toMissionState(mission),
+          session,
+        });
+        await this.appendMissionEvent({
+          eventType: 'MissionStarted.v1',
+          eventId,
+          mission,
+          actorId: principal.sub,
+          occurredAt: now,
+          session,
+        });
+        const response = this.commandResponse(mission, eventId);
+        await this.idempotencyService.complete(
+          recordId,
+          200,
+          response,
+          session,
+        );
+        return response;
+      },
+    );
   }
 
   async uploadMissionMedia(
@@ -363,7 +520,11 @@ export class FlightOpsService implements ResourceScopeResolver, OnModuleInit {
     idempotencyKey: string,
   ) {
     if (!file) {
-      throw new AppException(400, REASON_CODES.VALIDATION_FAILED, 'File is required');
+      throw new AppException(
+        400,
+        REASON_CODES.VALIDATION_FAILED,
+        'File is required',
+      );
     }
     const mission = await this.findMissionOrThrow(missionId);
     this.assertAssignedPilot(principal, mission);
@@ -374,49 +535,62 @@ export class FlightOpsService implements ResourceScopeResolver, OnModuleInit {
       missionId: mission.id,
     });
 
-    return this.runIdempotent(principal, idempotencyKey, `mission.media.upload:${missionId}`, async (recordId, session) => {
-      const current = await this.findMissionOrThrow(missionId, session);
-      this.assertAssignedPilot(principal, current);
-      this.assertMediaUploadAllowed(current);
-      const now = new Date();
-      const [asset] = await this.mediaAssetModel.create(
-        [
-          {
-            organizationId: current.organizationId,
-            missionId: current.id,
-            cloudinaryPublicId: uploaded.cloudinaryPublicId,
-            secureUrl: uploaded.secureUrl,
-            resourceType: uploaded.resourceType,
-            originalFilename: uploaded.originalFilename,
-            uploadedBy: principal.sub,
-            uploadedAt: now,
+    return this.runIdempotent(
+      principal,
+      idempotencyKey,
+      `mission.media.upload:${missionId}`,
+      async (recordId, session) => {
+        const current = await this.findMissionOrThrow(missionId, session);
+        this.assertAssignedPilot(principal, current);
+        this.assertMediaUploadAllowed(current);
+        const now = new Date();
+        const [asset] = await this.mediaAssetModel.create(
+          [
+            {
+              organizationId: current.organizationId,
+              missionId: current.id,
+              cloudinaryPublicId: uploaded.cloudinaryPublicId,
+              secureUrl: uploaded.secureUrl,
+              resourceType: uploaded.resourceType,
+              originalFilename: uploaded.originalFilename,
+              uploadedBy: principal.sub,
+              uploadedAt: now,
+            },
+          ],
+          { session },
+        );
+        const eventId = `MissionMediaUploaded.v1:${current.id}:${idempotencyKey}`;
+        await this.recordAudit({
+          principal,
+          mission: current,
+          action: 'flight.media.upload',
+          permissionKey: 'flight.media.upload',
+          after: { mediaAssetId: asset.id, resourceType: asset.resourceType },
+          metadata: {
+            mediaAssetId: asset.id,
+            cloudinaryPublicId: asset.cloudinaryPublicId,
           },
-        ],
-        { session },
-      );
-      const eventId = `MissionMediaUploaded.v1:${current.id}:${idempotencyKey}`;
-      await this.recordAudit({
-        principal,
-        mission: current,
-        action: 'flight.media.upload',
-        permissionKey: 'flight.media.upload',
-        after: { mediaAssetId: asset.id, resourceType: asset.resourceType },
-        metadata: { mediaAssetId: asset.id, cloudinaryPublicId: asset.cloudinaryPublicId },
-        session,
-      });
-      await this.appendMissionEvent({
-        eventType: 'MissionMediaUploaded.v1',
-        eventId,
-        mission: current,
-        actorId: principal.sub,
-        occurredAt: now,
-        payload: { mediaAssetId: asset.id, resourceType: asset.resourceType },
-        session,
-      });
-      const response = { ...toMediaDto(asset), eventId };
-      await this.idempotencyService.complete(recordId, 200, response, session);
-      return response;
-    });
+          session,
+        });
+        await this.appendMissionEvent({
+          eventType: 'MissionMediaUploaded.v1',
+          eventId,
+          mission: current,
+          actorId: principal.sub,
+          occurredAt: now,
+          payload: { mediaAssetId: asset.id, resourceType: asset.resourceType },
+          session,
+        });
+        const response = { ...toMediaDto(asset), eventId };
+        await this.idempotencyService.complete(
+          recordId,
+          200,
+          response,
+          session,
+        );
+        return response;
+      },
+    );
   }
 
   async completeMission(
@@ -425,114 +599,285 @@ export class FlightOpsService implements ResourceScopeResolver, OnModuleInit {
     pilotObservations: string | undefined,
     idempotencyKey: string,
   ) {
-    return this.runIdempotent(principal, idempotencyKey, `mission.pilot-complete:${missionId}`, async (recordId, session) => {
-      const mission = await this.findMissionOrThrow(missionId, session);
-      this.assertAssignedPilot(principal, mission);
-      if (mission.status === 'COMPLETED') {
-        const response = this.commandResponse(mission);
-        await this.idempotencyService.complete(recordId, 200, response, session);
+    return this.runIdempotent(
+      principal,
+      idempotencyKey,
+      `mission.pilot-complete:${missionId}`,
+      async (recordId, session) => {
+        const mission = await this.findMissionOrThrow(missionId, session);
+        this.assertAssignedPilot(principal, mission);
+        if (mission.status === 'COMPLETED') {
+          const response = this.commandResponse(mission);
+          await this.idempotencyService.complete(
+            recordId,
+            200,
+            response,
+            session,
+          );
+          return response;
+        }
+        if (mission.status !== 'IN_PROGRESS') {
+          throw new AppException(
+            409,
+            REASON_CODES.MISSION_NOT_COMPLETABLE,
+            'Mission cannot be completed from the current state',
+          );
+        }
+        const mediaCount = await this.mediaAssetModel
+          .countDocuments({ missionId: mission.id })
+          .session(session);
+        if (mediaCount === 0) {
+          throw new AppException(
+            409,
+            REASON_CODES.MISSION_MEDIA_REQUIRED,
+            'Mission media is required before completion',
+          );
+        }
+        const before = toMissionState(mission);
+        const now = new Date();
+        mission.status = 'COMPLETED';
+        mission.reviewStatus = 'PENDING_REVIEW';
+        mission.completedAt = now;
+        mission.completedBy = principal.sub;
+        mission.pilotCompletedAt = now;
+        mission.pilotObservations = cleanOptional(pilotObservations);
+        await mission.save({ session });
+        await this.mediaAssetModel.updateMany(
+          { missionId: mission.id },
+          { $set: { lockedAt: now } },
+          { session },
+        );
+        const eventId = `MissionPilotCompleted.v1:${mission.id}:${idempotencyKey}`;
+        await this.recordAudit({
+          principal,
+          mission,
+          action: 'flight.request.complete',
+          permissionKey: 'flight.request.complete',
+          before,
+          after: toMissionState(mission),
+          metadata: { mediaCount },
+          session,
+        });
+        await this.appendMissionEvent({
+          eventType: 'MissionPilotCompleted.v1',
+          eventId,
+          mission,
+          actorId: principal.sub,
+          occurredAt: now,
+          payload: { mediaCount },
+          session,
+        });
+        const response = {
+          ...this.commandResponse(mission, eventId),
+          mediaCount,
+        };
+        await this.idempotencyService.complete(
+          recordId,
+          200,
+          response,
+          session,
+        );
         return response;
-      }
-      if (mission.status !== 'IN_PROGRESS') {
-        throw new AppException(409, REASON_CODES.MISSION_NOT_COMPLETABLE, 'Mission cannot be completed from the current state');
-      }
-      const mediaCount = await this.mediaAssetModel.countDocuments({ missionId: mission.id }).session(session);
-      if (mediaCount === 0) {
-        throw new AppException(409, REASON_CODES.MISSION_MEDIA_REQUIRED, 'Mission media is required before completion');
-      }
-      const before = toMissionState(mission);
-      const now = new Date();
-      mission.status = 'COMPLETED';
-      mission.reviewStatus = 'PENDING_REVIEW';
-      mission.completedAt = now;
-      mission.completedBy = principal.sub;
-      mission.pilotCompletedAt = now;
-      mission.pilotObservations = cleanOptional(pilotObservations);
-      await mission.save({ session });
-      await this.mediaAssetModel.updateMany({ missionId: mission.id }, { $set: { lockedAt: now } }, { session });
-      const eventId = `MissionPilotCompleted.v1:${mission.id}:${idempotencyKey}`;
-      await this.recordAudit({ principal, mission, action: 'flight.request.complete', permissionKey: 'flight.request.complete', before, after: toMissionState(mission), metadata: { mediaCount }, session });
-      await this.appendMissionEvent({ eventType: 'MissionPilotCompleted.v1', eventId, mission, actorId: principal.sub, occurredAt: now, payload: { mediaCount }, session });
-      const response = { ...this.commandResponse(mission, eventId), mediaCount };
-      await this.idempotencyService.complete(recordId, 200, response, session);
-      return response;
-    });
+      },
+    );
   }
 
-  async reviewCloseMission(principal: AuthenticatedPrincipal, missionId: string, reviewObservations: string | undefined, idempotencyKey: string) {
-    return this.runIdempotent(principal, idempotencyKey, `mission.review-close:${missionId}`, async (recordId, session) => {
-      const mission = await this.findMissionOrThrow(missionId, session);
-      if (mission.assignedPilotId === principal.sub) {
-        throw new AppException(409, REASON_CODES.MISSION_REVIEW_REQUIRES_SEPARATE_ACTOR, 'Review close requires a separate actor');
-      }
-      if (mission.status !== 'COMPLETED' || mission.reviewStatus !== 'PENDING_REVIEW') {
-        throw new AppException(409, REASON_CODES.MISSION_REVIEW_NOT_READY, 'Mission is not ready for review close');
-      }
-      const before = toMissionState(mission);
-      const now = new Date();
-      mission.reviewStatus = 'REVIEWED_CLOSED';
-      mission.reviewedClosedAt = now;
-      mission.reviewedClosedBy = principal.sub;
-      mission.reviewObservations = cleanOptional(reviewObservations);
-      await mission.save({ session });
-      const eventId = `MissionReviewedClosed.v1:${mission.id}:${idempotencyKey}`;
-      await this.recordAudit({ principal, mission, action: 'flight.request.review_close', permissionKey: 'flight.observation.write', before, after: toMissionState(mission), metadata: { reviewStatus: mission.reviewStatus, separateActorEnforced: true }, session });
-      await this.appendMissionEvent({ eventType: 'MissionReviewedClosed.v1', eventId, mission, actorId: principal.sub, occurredAt: now, session });
-      const response = this.commandResponse(mission, eventId);
-      await this.idempotencyService.complete(recordId, 200, response, session);
-      return response;
-    });
+  async reviewCloseMission(
+    principal: AuthenticatedPrincipal,
+    missionId: string,
+    reviewObservations: string | undefined,
+    idempotencyKey: string,
+  ) {
+    return this.runIdempotent(
+      principal,
+      idempotencyKey,
+      `mission.review-close:${missionId}`,
+      async (recordId, session) => {
+        const mission = await this.findMissionOrThrow(missionId, session);
+        if (mission.assignedPilotId === principal.sub) {
+          throw new AppException(
+            409,
+            REASON_CODES.MISSION_REVIEW_REQUIRES_SEPARATE_ACTOR,
+            'Review close requires a separate actor',
+          );
+        }
+        if (
+          mission.status !== 'COMPLETED' ||
+          mission.reviewStatus !== 'PENDING_REVIEW'
+        ) {
+          throw new AppException(
+            409,
+            REASON_CODES.MISSION_REVIEW_NOT_READY,
+            'Mission is not ready for review close',
+          );
+        }
+        const before = toMissionState(mission);
+        const now = new Date();
+        mission.reviewStatus = 'REVIEWED_CLOSED';
+        mission.reviewedClosedAt = now;
+        mission.reviewedClosedBy = principal.sub;
+        mission.reviewObservations = cleanOptional(reviewObservations);
+        await mission.save({ session });
+        const eventId = `MissionReviewedClosed.v1:${mission.id}:${idempotencyKey}`;
+        await this.recordAudit({
+          principal,
+          mission,
+          action: 'flight.request.review_close',
+          permissionKey: 'flight.observation.write',
+          before,
+          after: toMissionState(mission),
+          metadata: {
+            reviewStatus: mission.reviewStatus,
+            separateActorEnforced: true,
+          },
+          session,
+        });
+        await this.appendMissionEvent({
+          eventType: 'MissionReviewedClosed.v1',
+          eventId,
+          mission,
+          actorId: principal.sub,
+          occurredAt: now,
+          session,
+        });
+        const response = this.commandResponse(mission, eventId);
+        await this.idempotencyService.complete(
+          recordId,
+          200,
+          response,
+          session,
+        );
+        return response;
+      },
+    );
   }
 
-  async cancelMission(principal: AuthenticatedPrincipal, missionId: string, observations: string | undefined, idempotencyKey: string) {
-    return this.runIdempotent(principal, idempotencyKey, `mission.cancel:${missionId}`, async (recordId, session) => {
-      const mission = await this.findMissionOrThrow(missionId, session);
-      if (mission.status === 'IN_PROGRESS') {
-        throw new AppException(409, REASON_CODES.MISSION_ALREADY_IN_PROGRESS, 'Mission cannot be cancelled after start');
-      }
-      if (['COMPLETED', 'CANCELLED', 'FAILED'].includes(mission.status)) {
-        throw new AppException(409, REASON_CODES.RESOURCE_STATE_CONFLICT, 'Mission cannot be cancelled from the current state');
-      }
-      const before = toMissionState(mission);
-      const now = new Date();
-      mission.status = 'CANCELLED';
-      mission.reviewStatus = 'NOT_READY';
-      mission.cancelledAt = now;
-      mission.cancelledBy = principal.sub;
-      mission.cancellationObservations = cleanOptional(observations);
-      await mission.save({ session });
-      const eventId = `MissionCancelled.v1:${mission.id}:${idempotencyKey}`;
-      await this.recordAudit({ principal, mission, action: 'flight.request.cancel', permissionKey: 'flight.request.cancel', before, after: toMissionState(mission), session });
-      await this.appendMissionEvent({ eventType: 'MissionCancelled.v1', eventId, mission, actorId: principal.sub, occurredAt: now, session });
-      const response = this.commandResponse(mission, eventId);
-      await this.idempotencyService.complete(recordId, 200, response, session);
-      return response;
-    });
+  async cancelMission(
+    principal: AuthenticatedPrincipal,
+    missionId: string,
+    observations: string | undefined,
+    idempotencyKey: string,
+  ) {
+    return this.runIdempotent(
+      principal,
+      idempotencyKey,
+      `mission.cancel:${missionId}`,
+      async (recordId, session) => {
+        const mission = await this.findMissionOrThrow(missionId, session);
+        if (mission.status === 'IN_PROGRESS') {
+          throw new AppException(
+            409,
+            REASON_CODES.MISSION_ALREADY_IN_PROGRESS,
+            'Mission cannot be cancelled after start',
+          );
+        }
+        if (['COMPLETED', 'CANCELLED', 'FAILED'].includes(mission.status)) {
+          throw new AppException(
+            409,
+            REASON_CODES.RESOURCE_STATE_CONFLICT,
+            'Mission cannot be cancelled from the current state',
+          );
+        }
+        const before = toMissionState(mission);
+        const now = new Date();
+        mission.status = 'CANCELLED';
+        mission.reviewStatus = 'NOT_READY';
+        mission.cancelledAt = now;
+        mission.cancelledBy = principal.sub;
+        mission.cancellationObservations = cleanOptional(observations);
+        await mission.save({ session });
+        const eventId = `MissionCancelled.v1:${mission.id}:${idempotencyKey}`;
+        await this.recordAudit({
+          principal,
+          mission,
+          action: 'flight.request.cancel',
+          permissionKey: 'flight.request.cancel',
+          before,
+          after: toMissionState(mission),
+          session,
+        });
+        await this.appendMissionEvent({
+          eventType: 'MissionCancelled.v1',
+          eventId,
+          mission,
+          actorId: principal.sub,
+          occurredAt: now,
+          session,
+        });
+        const response = this.commandResponse(mission, eventId);
+        await this.idempotencyService.complete(
+          recordId,
+          200,
+          response,
+          session,
+        );
+        return response;
+      },
+    );
   }
 
-  async failMission(principal: AuthenticatedPrincipal, missionId: string, observations: string, idempotencyKey: string) {
+  async failMission(
+    principal: AuthenticatedPrincipal,
+    missionId: string,
+    observations: string,
+    idempotencyKey: string,
+  ) {
     const trimmed = observations.trim();
     if (!trimmed) {
-      throw new AppException(400, REASON_CODES.MISSION_FAILURE_OBSERVATION_REQUIRED, 'Failure observations are required');
+      throw new AppException(
+        400,
+        REASON_CODES.MISSION_FAILURE_OBSERVATION_REQUIRED,
+        'Failure observations are required',
+      );
     }
-    return this.runIdempotent(principal, idempotencyKey, `mission.fail:${missionId}`, async (recordId, session) => {
-      const mission = await this.findMissionOrThrow(missionId, session);
-      if (!['READY', 'IN_PROGRESS'].includes(mission.status)) {
-        throw new AppException(409, REASON_CODES.RESOURCE_STATE_CONFLICT, 'Mission cannot fail from the current state');
-      }
-      const before = toMissionState(mission);
-      const now = new Date();
-      mission.status = 'FAILED';
-      mission.reviewStatus = 'NOT_READY';
-      mission.failureObservations = trimmed;
-      await mission.save({ session });
-      const eventId = `MissionFailed.v1:${mission.id}:${idempotencyKey}`;
-      await this.recordAudit({ principal, mission, action: 'flight.request.fail', permissionKey: 'flight.request.complete', before, after: toMissionState(mission), metadata: { hasObservations: true }, session });
-      await this.appendMissionEvent({ eventType: 'MissionFailed.v1', eventId, mission, actorId: principal.sub, occurredAt: now, session });
-      const response = this.commandResponse(mission, eventId);
-      await this.idempotencyService.complete(recordId, 200, response, session);
-      return response;
-    });
+    return this.runIdempotent(
+      principal,
+      idempotencyKey,
+      `mission.fail:${missionId}`,
+      async (recordId, session) => {
+        const mission = await this.findMissionOrThrow(missionId, session);
+        if (!['READY', 'IN_PROGRESS'].includes(mission.status)) {
+          throw new AppException(
+            409,
+            REASON_CODES.RESOURCE_STATE_CONFLICT,
+            'Mission cannot fail from the current state',
+          );
+        }
+        const before = toMissionState(mission);
+        const now = new Date();
+        mission.status = 'FAILED';
+        mission.reviewStatus = 'NOT_READY';
+        mission.failureObservations = trimmed;
+        await mission.save({ session });
+        const eventId = `MissionFailed.v1:${mission.id}:${idempotencyKey}`;
+        await this.recordAudit({
+          principal,
+          mission,
+          action: 'flight.request.fail',
+          permissionKey: 'flight.request.complete',
+          before,
+          after: toMissionState(mission),
+          metadata: { hasObservations: true },
+          session,
+        });
+        await this.appendMissionEvent({
+          eventType: 'MissionFailed.v1',
+          eventId,
+          mission,
+          actorId: principal.sub,
+          occurredAt: now,
+          session,
+        });
+        const response = this.commandResponse(mission, eventId);
+        await this.idempotencyService.complete(
+          recordId,
+          200,
+          response,
+          session,
+        );
+        return response;
+      },
+    );
   }
 
   private async runIdempotent<T extends Record<string, unknown>>(
@@ -542,7 +887,12 @@ export class FlightOpsService implements ResourceScopeResolver, OnModuleInit {
     handler: (recordId: string, session: ClientSession) => Promise<T>,
   ) {
     return this.transactionManagerService.runInTransaction(async (session) => {
-      const begun = await this.idempotencyService.begin(principal.activeOrganizationId!, key, operation, session);
+      const begun = await this.idempotencyService.begin(
+        principal.activeOrganizationId!,
+        key,
+        operation,
+        session,
+      );
       if (begun.type === 'completed') {
         return begun.record.responseBody as T;
       }
@@ -557,32 +907,61 @@ export class FlightOpsService implements ResourceScopeResolver, OnModuleInit {
     }
     const mission = await query;
     if (!mission) {
-      throw new AppException(404, REASON_CODES.RESOURCE_NOT_FOUND, 'Mission was not found');
+      throw new AppException(
+        404,
+        REASON_CODES.RESOURCE_NOT_FOUND,
+        'Mission was not found',
+      );
     }
     return mission;
   }
 
-  private assertMissionReadableByPrincipal(principal: AuthenticatedPrincipal, mission: MissionDocument) {
+  private assertMissionReadableByPrincipal(
+    principal: AuthenticatedPrincipal,
+    mission: MissionDocument,
+  ) {
     if (mission.organizationId !== principal.activeOrganizationId) {
-      throw new AppException(404, REASON_CODES.RESOURCE_NOT_FOUND, 'Mission was not found');
+      throw new AppException(
+        404,
+        REASON_CODES.RESOURCE_NOT_FOUND,
+        'Mission was not found',
+      );
     }
     if (mission.assignedPilotId && mission.assignedPilotId === principal.sub) {
       return;
     }
   }
 
-  private assertAssignedPilot(principal: AuthenticatedPrincipal, mission: MissionDocument) {
+  private assertAssignedPilot(
+    principal: AuthenticatedPrincipal,
+    mission: MissionDocument,
+  ) {
     if (mission.assignedPilotId !== principal.sub) {
-      throw new AppException(403, REASON_CODES.MISSION_ASSIGNED_PILOT_REQUIRED, 'Only the assigned pilot can perform this action');
+      throw new AppException(
+        403,
+        REASON_CODES.MISSION_ASSIGNED_PILOT_REQUIRED,
+        'Only the assigned pilot can perform this action',
+      );
     }
   }
 
   private assertMediaUploadAllowed(mission: MissionDocument) {
-    if (mission.status !== 'IN_PROGRESS' || mission.assignmentStatus !== 'ACCEPTED') {
-      throw new AppException(409, REASON_CODES.MISSION_PILOT_ACCEPTANCE_REQUIRED, 'Mission must be in progress and accepted before upload');
+    if (
+      mission.status !== 'IN_PROGRESS' ||
+      mission.assignmentStatus !== 'ACCEPTED'
+    ) {
+      throw new AppException(
+        409,
+        REASON_CODES.MISSION_PILOT_ACCEPTANCE_REQUIRED,
+        'Mission must be in progress and accepted before upload',
+      );
     }
     if (mission.pilotCompletedAt) {
-      throw new AppException(409, REASON_CODES.MISSION_MEDIA_LOCKED, 'Mission media is locked after completion');
+      throw new AppException(
+        409,
+        REASON_CODES.MISSION_MEDIA_LOCKED,
+        'Mission media is locked after completion',
+      );
     }
   }
 
@@ -715,7 +1094,10 @@ export class FlightOpsService implements ResourceScopeResolver, OnModuleInit {
   }
 }
 
-function normalizeScheduledWindow(input: { startsAt: string; endsAt?: string }) {
+function normalizeScheduledWindow(input: {
+  startsAt: string;
+  endsAt?: string;
+}) {
   return {
     startsAt: new Date(input.startsAt),
     endsAt: input.endsAt ? new Date(input.endsAt) : undefined,

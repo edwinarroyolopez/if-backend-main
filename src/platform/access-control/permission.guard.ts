@@ -10,6 +10,7 @@ import {
 } from './access-control.decorators';
 import { PrincipalAuthorizationService } from './principal-authorization.service';
 import { ResourceScopeService } from './resource-scope.service';
+import { ResolveResourceOptions } from './resource-scope.types';
 
 @Injectable()
 export class PermissionGuard implements CanActivate {
@@ -28,10 +29,9 @@ export class PermissionGuard implements CanActivate {
       return true;
     }
 
-    const resourceOptions = this.reflector.getAllAndOverride(
-      RESOLVE_RESOURCE_KEY,
-      [context.getHandler(), context.getClass()],
-    );
+    const resourceOptions = this.reflector.getAllAndOverride<
+      ResolveResourceOptions | undefined
+    >(RESOLVE_RESOURCE_KEY, [context.getHandler(), context.getClass()]);
     if (!resourceOptions) {
       throw new AppException(
         403,
@@ -41,7 +41,7 @@ export class PermissionGuard implements CanActivate {
     }
 
     const request = context.switchToHttp().getRequest<
-      Request & {
+      Omit<Request, 'body'> & {
         user: AuthenticatedPrincipal;
         body?: Record<string, unknown>;
       }

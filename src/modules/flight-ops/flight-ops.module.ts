@@ -10,11 +10,13 @@ import { ProjectsModule } from 'src/modules/projects/projects.module';
 import { CloudinaryUploadService } from './cloudinary-upload.service';
 import { FlightOpsController } from './flight-ops.controller';
 import { FlightOpsService } from './flight-ops.service';
+import { MissionMediaStoragePort } from './mission-media-storage.port';
 import {
   MissionMediaAsset,
   MissionMediaAssetSchema,
 } from './mission-media-asset.schema';
 import { Mission, MissionSchema } from './mission.schema';
+import { PilotAssignmentPolicy } from './pilot-assignment-policy.service';
 
 @Module({
   imports: [
@@ -30,7 +32,16 @@ import { Mission, MissionSchema } from './mission.schema';
     ]),
   ],
   controllers: [FlightOpsController],
-  providers: [FlightOpsService, CloudinaryUploadService, TransactionManagerService],
+  providers: [
+    FlightOpsService,
+    CloudinaryUploadService,
+    {
+      provide: MissionMediaStoragePort,
+      useExisting: CloudinaryUploadService,
+    },
+    PilotAssignmentPolicy,
+    TransactionManagerService,
+  ],
   exports: [FlightOpsService],
 })
 export class FlightOpsModule {}

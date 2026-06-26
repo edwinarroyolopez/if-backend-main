@@ -2,8 +2,8 @@ import { INestApplication } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { getModelToken } from '@nestjs/mongoose';
 import { Test, TestingModule } from '@nestjs/testing';
-import { Model } from 'mongoose';
 import request, { Response } from 'supertest';
+import type { HydratedModel } from 'src/common/types/mongoose-model.type';
 import {
   AccessPolicy,
   AccessPolicyDocument,
@@ -37,19 +37,24 @@ import {
   MediaBatch,
   MediaBatchDocument,
 } from 'src/modules/image-ops/media-batch.schema';
+import {
+  MissionMediaAsset,
+  MissionMediaAssetDocument,
+} from 'src/modules/flight-ops/mission-media-asset.schema';
 import { applyTestEnvironment, startMongoReplSet } from './mongo-replset';
 
 type TestModels = {
-  users: Model<UserDocument>;
-  accessPolicies: Model<AccessPolicyDocument>;
-  roles: Model<RoleDocument>;
-  outbox: Model<OutboxEventDocument>;
-  auditLogs: Model<AuditLogDocument>;
-  mediaBatches: Model<MediaBatchDocument>;
-  serviceAccounts: Model<ServiceAccountDocument>;
-  serviceCredentials: Model<ServiceCredentialDocument>;
-  projectConnectorMirrors: Model<ProjectConnectorMirrorDocument>;
-  authSessions: Model<AuthSessionDocument>;
+  users: HydratedModel<UserDocument>;
+  accessPolicies: HydratedModel<AccessPolicyDocument>;
+  roles: HydratedModel<RoleDocument>;
+  outbox: HydratedModel<OutboxEventDocument>;
+  auditLogs: HydratedModel<AuditLogDocument>;
+  mediaBatches: HydratedModel<MediaBatchDocument>;
+  missionMediaAssets: HydratedModel<MissionMediaAssetDocument>;
+  serviceAccounts: HydratedModel<ServiceAccountDocument>;
+  serviceCredentials: HydratedModel<ServiceCredentialDocument>;
+  projectConnectorMirrors: HydratedModel<ProjectConnectorMirrorDocument>;
+  authSessions: HydratedModel<AuthSessionDocument>;
 };
 
 export type TestContext = {
@@ -106,28 +111,33 @@ export async function createTestContext(): Promise<TestContext> {
 
 function getModels(app: INestApplication): TestModels {
   return {
-    users: app.get<Model<UserDocument>>(getModelToken(User.name)),
-    accessPolicies: app.get<Model<AccessPolicyDocument>>(
+    users: app.get<HydratedModel<UserDocument>>(getModelToken(User.name)),
+    accessPolicies: app.get<HydratedModel<AccessPolicyDocument>>(
       getModelToken(AccessPolicy.name),
     ),
-    roles: app.get<Model<RoleDocument>>(getModelToken(Role.name)),
-    outbox: app.get<Model<OutboxEventDocument>>(
+    roles: app.get<HydratedModel<RoleDocument>>(getModelToken(Role.name)),
+    outbox: app.get<HydratedModel<OutboxEventDocument>>(
       getModelToken(OutboxEvent.name),
     ),
-    auditLogs: app.get<Model<AuditLogDocument>>(getModelToken(AuditLog.name)),
-    mediaBatches: app.get<Model<MediaBatchDocument>>(
+    auditLogs: app.get<HydratedModel<AuditLogDocument>>(
+      getModelToken(AuditLog.name),
+    ),
+    mediaBatches: app.get<HydratedModel<MediaBatchDocument>>(
       getModelToken(MediaBatch.name),
     ),
-    serviceAccounts: app.get<Model<ServiceAccountDocument>>(
+    missionMediaAssets: app.get<HydratedModel<MissionMediaAssetDocument>>(
+      getModelToken(MissionMediaAsset.name),
+    ),
+    serviceAccounts: app.get<HydratedModel<ServiceAccountDocument>>(
       getModelToken(ServiceAccount.name),
     ),
-    serviceCredentials: app.get<Model<ServiceCredentialDocument>>(
+    serviceCredentials: app.get<HydratedModel<ServiceCredentialDocument>>(
       getModelToken(ServiceCredential.name),
     ),
-    projectConnectorMirrors: app.get<Model<ProjectConnectorMirrorDocument>>(
-      getModelToken(ProjectConnectorMirror.name),
-    ),
-    authSessions: app.get<Model<AuthSessionDocument>>(
+    projectConnectorMirrors: app.get<
+      HydratedModel<ProjectConnectorMirrorDocument>
+    >(getModelToken(ProjectConnectorMirror.name)),
+    authSessions: app.get<HydratedModel<AuthSessionDocument>>(
       getModelToken(AuthSession.name),
     ),
   };
@@ -196,7 +206,11 @@ export async function createOperationalFixtures(
       projectId: projectResponse.body.id as string,
       key: `mission-${uniqueSeed}`,
       name: `Mission ${uniqueSeed}`,
-      status: 'READY',
+      buildingName: `Building ${uniqueSeed}`,
+      address: `${uniqueSeed} Test Street`,
+      scheduledWindow: {
+        startsAt: new Date(Date.now() + 60_000).toISOString(),
+      },
     })
     .expect(201);
 
@@ -205,6 +219,52 @@ export async function createOperationalFixtures(
     projectId: projectResponse.body.id as string,
     missionId: missionResponse.body.id as string,
   };
+}
+
+export async function prepareMissionForPilotCompletion(
+  context: TestContext,
+  input: {
+    accessToken: string;
+    ownerEmail: string;
+    missionId: string;
+    organizationId: string;
+    seed: string;
+  },
+) {
+  const owner = await context.models.users.findOne({ email: input.ownerEmail });
+  if (!owner) {
+    throw new Error(`Test owner not found: ${input.ownerEmail}`);
+  }
+
+  await context.http
+    .post(`/api/v1/missions/${input.missionId}/assign`)
+    .set('Authorization', `Bearer ${input.accessToken}`)
+    .set('Idempotency-Key', `assign-${input.seed}`)
+    .send({ assignedPilotId: owner.id })
+    .expect(201);
+  await context.http
+    .post(`/api/v1/missions/${input.missionId}/accept`)
+    .set('Authorization', `Bearer ${input.accessToken}`)
+    .set('Idempotency-Key', `accept-${input.seed}`)
+    .expect(201);
+  await context.http
+    .post(`/api/v1/missions/${input.missionId}/start`)
+    .set('Authorization', `Bearer ${input.accessToken}`)
+    .set('Idempotency-Key', `start-${input.seed}`)
+    .expect(201);
+
+  await context.models.missionMediaAssets.create({
+    organizationId: input.organizationId,
+    missionId: input.missionId,
+    cloudinaryPublicId: `test/${input.missionId}/${input.seed}`,
+    secureUrl: `https://res.cloudinary.com/test/image/upload/${input.seed}`,
+    resourceType: 'image',
+    originalFilename: 'mission-evidence.jpg',
+    uploadedBy: owner.id,
+    uploadedAt: new Date(),
+  });
+
+  await context.drainOutboxUntilIdle();
 }
 
 export async function registerNativeUser(

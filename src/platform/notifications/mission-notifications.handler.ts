@@ -23,12 +23,16 @@ const MISSION_EVENTS = new Set([
 export class MissionNotificationsHandler
   implements DomainEventHandler, OnModuleInit
 {
+  readonly consumerName = 'notifications.mission';
+
   constructor(
     private readonly outboxRelayService: OutboxRelayService,
     private readonly notificationsService: NotificationsService,
     private readonly realtimeService: RealtimeService,
     private readonly identityService: IdentityService,
-  ) {}
+  ) {
+    this.outboxRelayService.registerHandler(this);
+  }
 
   onModuleInit() {
     this.outboxRelayService.registerHandler(this);

@@ -1,7 +1,10 @@
 import { Prop, Schema, SchemaFactory } from '@nestjs/mongoose';
 import { HydratedDocument } from 'mongoose';
 
-export type IdempotencyKeyDocument = HydratedDocument<IdempotencyKeyRecord>;
+export type IdempotencyKeyDocument = Omit<
+  HydratedDocument<IdempotencyKeyRecord>,
+  'id'
+> & { id: string };
 
 @Schema({ collection: 'idempotency_keys', timestamps: true })
 export class IdempotencyKeyRecord {

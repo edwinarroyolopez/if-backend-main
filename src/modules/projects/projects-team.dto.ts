@@ -28,7 +28,7 @@ export class CreateProjectMembershipDto {
   displayName!: string;
 
   @IsOptional()
-  @Transform(({ value }) =>
+  @Transform(({ value }: { value: unknown }) =>
     typeof value === 'string' && value.trim() === '' ? undefined : value,
   )
   @IsEmail()
@@ -65,7 +65,7 @@ export class UpdateProjectMembershipDto {
   displayName?: string;
 
   @IsOptional()
-  @Transform(({ value }) =>
+  @Transform(({ value }: { value: unknown }) =>
     typeof value === 'string' && value.trim() === '' ? undefined : value,
   )
   @IsEmail()

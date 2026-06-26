@@ -2,11 +2,11 @@ import { randomBytes, randomUUID } from 'node:crypto';
 import { Injectable } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { InjectModel } from '@nestjs/mongoose';
-import { Model } from 'mongoose';
 import argon2 from 'argon2';
 import { AppException } from 'src/common/errors/app-exception';
 import { REASON_CODES } from 'src/common/errors/reason-codes';
 import { AuthenticatedPrincipal } from 'src/common/types/authenticated-principal';
+import type { HydratedModel } from 'src/common/types/mongoose-model.type';
 import { PrincipalAuthorizationService } from 'src/platform/access-control/principal-authorization.service';
 import { AccessControlService } from 'src/platform/access-control/access-control.service';
 import { AuditService } from 'src/platform/audit/audit.service';
@@ -24,14 +24,15 @@ import {
   ServiceCredential,
   ServiceCredentialDocument,
 } from './service-credential.schema';
+import { issueServiceAccessToken } from './service-account-token-issuer';
 
 @Injectable()
 export class IntegrationsService implements ServicePrincipalLookup {
   constructor(
     @InjectModel(ServiceAccount.name)
-    private readonly serviceAccountModel: Model<ServiceAccountDocument>,
+    private readonly serviceAccountModel: HydratedModel<ServiceAccountDocument>,
     @InjectModel(ServiceCredential.name)
-    private readonly serviceCredentialModel: Model<ServiceCredentialDocument>,
+    private readonly serviceCredentialModel: HydratedModel<ServiceCredentialDocument>,
     private readonly transactionManagerService: TransactionManagerService,
     private readonly accessControlService: AccessControlService,
     private readonly principalAuthorizationService: PrincipalAuthorizationService,
@@ -135,8 +136,9 @@ export class IntegrationsService implements ServicePrincipalLookup {
   ) {
     const clientSecret = randomBytes(24).toString('hex');
     return this.transactionManagerService.runInTransaction(async (session) => {
-      const serviceAccount =
-        await this.serviceAccountModel.findById(serviceAccountId);
+      const serviceAccount = await this.serviceAccountModel
+        .findById(serviceAccountId)
+        .session(session);
       if (!serviceAccount) {
         throw new AppException(
           404,
@@ -149,6 +151,13 @@ export class IntegrationsService implements ServicePrincipalLookup {
           403,
           REASON_CODES.PERMISSION_DENIED,
           'Service account is outside the active organization',
+        );
+      }
+      if (serviceAccount.status !== 'ACTIVE') {
+        throw new AppException(
+          403,
+          REASON_CODES.SERVICE_ACCOUNT_SUSPENDED,
+          'Service account is not active',
         );
       }
 
@@ -201,99 +210,18 @@ export class IntegrationsService implements ServicePrincipalLookup {
     clientSecret: string;
     audience: string;
   }) {
-    const apiAudience =
-      this.configService.getOrThrow<string>('app.jwtAudience');
-    if (input.audience !== apiAudience) {
-      throw new AppException(
-        403,
-        REASON_CODES.PERMISSION_DENIED,
-        'Audience is not allowed for this API',
-      );
-    }
-
-    const credential = await this.serviceCredentialModel
-      .findOne({ keyId: input.keyId, status: 'ACTIVE' })
-      .select('+credentialHash');
-    if (!credential?.credentialHash) {
-      throw new AppException(
-        401,
-        REASON_CODES.SERVICE_CREDENTIAL_INVALID,
-        'Service credential is invalid',
-      );
-    }
-    const matches = await argon2.verify(
-      credential.credentialHash,
-      input.clientSecret,
+    return issueServiceAccessToken(
+      {
+        serviceAccountModel: this.serviceAccountModel,
+        serviceCredentialModel: this.serviceCredentialModel,
+        transactionManagerService: this.transactionManagerService,
+        principalAuthorizationService: this.principalAuthorizationService,
+        auditService: this.auditService,
+        technicalSessionIssuerService: this.technicalSessionIssuerService,
+        configService: this.configService,
+      },
+      input,
     );
-    if (!matches) {
-      throw new AppException(
-        401,
-        REASON_CODES.SERVICE_CREDENTIAL_INVALID,
-        'Service credential is invalid',
-      );
-    }
-
-    const serviceAccount = await this.serviceAccountModel.findById(
-      credential.serviceAccountId,
-    );
-    if (!serviceAccount || serviceAccount.status !== 'ACTIVE') {
-      throw new AppException(
-        403,
-        REASON_CODES.SERVICE_ACCOUNT_SUSPENDED,
-        'Service account is not active',
-      );
-    }
-    if (!serviceAccount.allowedAudiences.includes(apiAudience)) {
-      throw new AppException(
-        403,
-        REASON_CODES.PERMISSION_DENIED,
-        'Audience is not allowed for this service account',
-      );
-    }
-
-    return this.transactionManagerService.runInTransaction(async (session) => {
-      const authorizationContext =
-        await this.principalAuthorizationService.getServiceAccountAuthorizationContext(
-          {
-            serviceAccountId: serviceAccount.id,
-            authorizationVersion: serviceAccount.authorizationVersion,
-            activeOrganizationId: serviceAccount.organizationId,
-          },
-        );
-      const issued =
-        await this.technicalSessionIssuerService.issueServiceAccountSession({
-          serviceAccountId: serviceAccount.id,
-          sessionVersion: serviceAccount.sessionVersion,
-          authorizationVersion: authorizationContext.authorizationVersion,
-          authorizationFingerprint:
-            authorizationContext.authorizationFingerprint,
-          activeOrganizationId: serviceAccount.organizationId,
-          session,
-        });
-
-      await this.serviceCredentialModel.updateOne(
-        { _id: credential.id },
-        { $set: { lastUsedAt: new Date() } },
-        { session },
-      );
-      await this.auditService.record(
-        {
-          actorType: 'SERVICE_ACCOUNT',
-          actorId: serviceAccount.id,
-          actorSessionId: issued.sessionId,
-          organizationId: serviceAccount.organizationId,
-          action: 'integrations.service_account.token',
-          resourceType: 'SERVICE_ACCOUNT',
-          resourceId: serviceAccount.id,
-        },
-        session,
-      );
-
-      return {
-        accessToken: issued.accessToken,
-        sessionId: issued.sessionId,
-      };
-    });
   }
 
   async findServicePrincipalById(

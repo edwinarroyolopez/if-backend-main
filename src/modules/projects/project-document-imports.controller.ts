@@ -14,7 +14,7 @@ import {
 import {
   CommitProjectDocumentImportDto,
   PreviewProjectDocumentImportDto,
-} from './projects-documentation.dto';
+} from './projects-document-import.dto';
 import { ProjectsService } from './projects.service';
 
 @ProjectsControllerRoute()

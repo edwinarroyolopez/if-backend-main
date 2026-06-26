@@ -1,8 +1,9 @@
 import { Injectable } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
-import { ClientSession, Model } from 'mongoose';
+import { ClientSession } from 'mongoose';
 import { AppException } from 'src/common/errors/app-exception';
 import { REASON_CODES } from 'src/common/errors/reason-codes';
+import type { HydratedModel } from 'src/common/types/mongoose-model.type';
 import {
   IdempotencyKeyDocument,
   IdempotencyKeyRecord,
@@ -12,7 +13,7 @@ import {
 export class IdempotencyService {
   constructor(
     @InjectModel(IdempotencyKeyRecord.name)
-    private readonly idempotencyModel: Model<IdempotencyKeyDocument>,
+    private readonly idempotencyModel: HydratedModel<IdempotencyKeyDocument>,
   ) {}
 
   async begin(

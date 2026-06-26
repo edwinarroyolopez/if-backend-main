@@ -17,6 +17,9 @@
       "src/*": [
         "src/*"
       ],
+      "supertest": [
+        "test/types/supertest.d.ts"
+      ],
       "test/*": [
         "test/*"
       ]

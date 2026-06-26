@@ -5,7 +5,9 @@ import {
   OpportunityStatus,
 } from 'src/common/types/domain.types';
 
-export type OpportunityDocument = HydratedDocument<Opportunity>;
+export type OpportunityDocument = Omit<HydratedDocument<Opportunity>, 'id'> & {
+  id: string;
+};
 
 @Schema({ collection: 'opportunities', timestamps: true })
 export class Opportunity {

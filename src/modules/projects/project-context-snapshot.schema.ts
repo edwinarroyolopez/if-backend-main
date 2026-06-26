@@ -1,8 +1,10 @@
 import { Prop, Schema, SchemaFactory } from '@nestjs/mongoose';
 import { HydratedDocument } from 'mongoose';
 
-export type ProjectContextSnapshotDocument =
-  HydratedDocument<ProjectContextSnapshot>;
+export type ProjectContextSnapshotDocument = Omit<
+  HydratedDocument<ProjectContextSnapshot>,
+  'id'
+> & { id: string };
 
 @Schema({
   collection: 'project_context_snapshots',

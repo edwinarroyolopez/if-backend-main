@@ -1,8 +1,10 @@
 import { Prop, Schema, SchemaFactory } from '@nestjs/mongoose';
 import { HydratedDocument } from 'mongoose';
 
-export type PermissionDefinitionDocument =
-  HydratedDocument<PermissionDefinition>;
+export type PermissionDefinitionDocument = Omit<
+  HydratedDocument<PermissionDefinition>,
+  'id'
+> & { id: string };
 
 @Schema({ collection: 'permission_definitions', timestamps: true })
 export class PermissionDefinition {

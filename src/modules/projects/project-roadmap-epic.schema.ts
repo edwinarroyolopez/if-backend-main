@@ -1,7 +1,10 @@
 import { Prop, Schema, SchemaFactory } from '@nestjs/mongoose';
 import { HydratedDocument } from 'mongoose';
 
-export type ProjectRoadmapEpicDocument = HydratedDocument<ProjectRoadmapEpic>;
+export type ProjectRoadmapEpicDocument = Omit<
+  HydratedDocument<ProjectRoadmapEpic>,
+  'id'
+> & { id: string };
 
 @Schema({ collection: 'project_roadmap_epics', timestamps: true })
 export class ProjectRoadmapEpic {

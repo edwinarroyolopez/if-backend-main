@@ -1,7 +1,10 @@
 import { Prop, Schema, SchemaFactory } from '@nestjs/mongoose';
 import { HydratedDocument } from 'mongoose';
 
-export type RolePermissionDocument = HydratedDocument<RolePermission>;
+export type RolePermissionDocument = Omit<
+  HydratedDocument<RolePermission>,
+  'id'
+> & { id: string };
 
 @Schema({ collection: 'role_permissions', timestamps: true })
 export class RolePermission {

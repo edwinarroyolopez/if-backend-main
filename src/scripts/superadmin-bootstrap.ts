@@ -1,42 +1,26 @@
-import { randomBytes } from 'node:crypto';
 import { NestFactory } from '@nestjs/core';
 import { ConfigService } from '@nestjs/config';
-import { getModelToken } from '@nestjs/mongoose';
-import { ClientSession, Model } from 'mongoose';
 import { normalizeEmail } from 'src/common/utils/hash.util';
 import { AppModule } from 'src/app.module';
+import type { OrganizationDocument } from 'src/modules/organizations/organization.schema';
 import { ProjectsService } from 'src/modules/projects/projects.service';
-import {
-  Organization,
-  OrganizationDocument,
-} from 'src/modules/organizations/organization.schema';
 import { AccessControlService } from 'src/platform/access-control/access-control.service';
-import {
-  PermissionDefinition,
-  PermissionDefinitionDocument,
-} from 'src/platform/access-control/permission-definition.schema';
+import type { PermissionDefinitionDocument } from 'src/platform/access-control/permission-definition.schema';
 import { SUPERADMIN_ROLE_KEY } from 'src/platform/access-control/permission-registry';
-import {
-  RoleAssignment,
-  RoleAssignmentDocument,
-} from 'src/platform/access-control/role-assignment.schema';
-import {
-  RolePermission,
-  RolePermissionDocument,
-} from 'src/platform/access-control/role-permission.schema';
-import { Role, RoleDocument } from 'src/platform/access-control/role.schema';
+import type { RoleAssignmentDocument } from 'src/platform/access-control/role-assignment.schema';
+import type { RoleDocument } from 'src/platform/access-control/role.schema';
 import { AuditService } from 'src/platform/audit/audit.service';
 import { TransactionManagerService } from 'src/platform/database/transaction-manager.service';
-import {
-  Credential,
-  CredentialDocument,
-} from 'src/platform/identity/credential.schema';
 import { IdentityService } from 'src/platform/identity/identity.service';
 import { PasswordHasherService } from 'src/platform/identity/password-hasher.service';
-import { User, UserDocument } from 'src/platform/identity/user.schema';
-
-const DEFAULT_ORGANIZATION_KEY = 'inflight-local';
-const DEFAULT_ORGANIZATION_NAME = 'InflightOS Local';
+import type { UserDocument } from 'src/platform/identity/user.schema';
+import {
+  DEFAULT_ORGANIZATION_KEY,
+  DEFAULT_ORGANIZATION_NAME,
+  resolveSuperadminBootstrapConfig,
+} from './superadmin-bootstrap-config';
+import { getSuperadminBootstrapModels } from './superadmin-bootstrap-models';
+import { setActivePasswordCredential } from './superadmin-bootstrap-password';
 
 async function bootstrap() {
   const app = await NestFactory.createApplicationContext(AppModule, {
@@ -45,16 +29,12 @@ async function bootstrap() {
 
   try {
     const configService = app.get(ConfigService);
-    const configuredEmail =
-      configService.get<string>('app.superadminEmail')?.trim() ??
-      'superadmin@inflight.local';
-    const configuredName =
-      configService.get<string>('app.superadminName')?.trim() ??
-      'InflightOS Superadmin';
-    const configuredPassword = configService
-      .get<string>('app.superadminPassword')
-      ?.trim();
-    const bootstrapPassword = configuredPassword || generatePassword();
+    const {
+      configuredEmail,
+      configuredName,
+      configuredPassword,
+      bootstrapPassword,
+    } = resolveSuperadminBootstrapConfig(configService);
 
     const transactionManagerService = app.get(TransactionManagerService);
     const accessControlService = app.get(AccessControlService);
@@ -62,33 +42,25 @@ async function bootstrap() {
     const passwordHasherService = app.get(PasswordHasherService);
     const auditService = app.get(AuditService);
     const projectsService = app.get(ProjectsService);
-    const organizationModel = app.get<Model<OrganizationDocument>>(
-      getModelToken(Organization.name),
-    );
-    const userModel = app.get<Model<UserDocument>>(getModelToken(User.name));
-    const credentialModel = app.get<Model<CredentialDocument>>(
-      getModelToken(Credential.name),
-    );
-    const roleAssignmentModel = app.get<Model<RoleAssignmentDocument>>(
-      getModelToken(RoleAssignment.name),
-    );
-    const rolePermissionModel = app.get<Model<RolePermissionDocument>>(
-      getModelToken(RolePermission.name),
-    );
-    const permissionDefinitionModel = app.get<
-      Model<PermissionDefinitionDocument>
-    >(getModelToken(PermissionDefinition.name));
-    const roleModel = app.get<Model<RoleDocument>>(getModelToken(Role.name));
+    const {
+      organizationModel,
+      userModel,
+      credentialModel,
+      roleAssignmentModel,
+      rolePermissionModel,
+      permissionDefinitionModel,
+      roleModel,
+    } = getSuperadminBootstrapModels(app);
     const normalizedEmail = normalizeEmail(configuredEmail);
 
     const result = await transactionManagerService.runInTransaction(
-      async (session: ClientSession) => {
-        let user = await userModel
+      async (session) => {
+        let user = (await userModel
           .findOne({ normalizedEmail })
-          .session(session);
+          .session(session)) as UserDocument | null;
         const userAlreadyExisted = Boolean(user);
         if (!user) {
-          [user] = await userModel.create(
+          [user] = (await userModel.create(
             [
               {
                 email: configuredEmail,
@@ -100,7 +72,7 @@ async function bootstrap() {
               },
             ],
             { session },
-          );
+          )) as UserDocument[];
           await auditService.record(
             {
               actorType: 'SYSTEM',
@@ -118,11 +90,11 @@ async function bootstrap() {
           await user.save({ session });
         }
 
-        let organization = await organizationModel
+        let organization = (await organizationModel
           .findOne({ key: DEFAULT_ORGANIZATION_KEY })
-          .session(session);
+          .session(session)) as OrganizationDocument | null;
         if (!organization) {
-          [organization] = await organizationModel.create(
+          [organization] = (await organizationModel.create(
             [
               {
                 key: DEFAULT_ORGANIZATION_KEY,
@@ -132,7 +104,7 @@ async function bootstrap() {
               },
             ],
             { session },
-          );
+          )) as OrganizationDocument[];
         } else if (organization.status !== 'ACTIVE') {
           organization.status = 'ACTIVE';
           organization.name = DEFAULT_ORGANIZATION_NAME;
@@ -147,13 +119,15 @@ async function bootstrap() {
           },
           session,
         );
-        const activePermissionKeys = (
-          await permissionDefinitionModel
-            .find({ status: 'ACTIVE' })
-            .sort({ key: 1 })
-            .session(session)
-        ).map((permission) => permission.key);
+        const permissionDefinitions = (await permissionDefinitionModel
+          .find({ status: 'ACTIVE' })
+          .sort({ key: 1 })
+          .session(session)) as PermissionDefinitionDocument[];
+        const activePermissionKeys = permissionDefinitions.map(
+          (permission) => permission.key,
+        );
         await accessControlService.assignPermissionsToRole(
+          organization.id,
           superadminRole.id,
           activePermissionKeys,
           session,
@@ -199,7 +173,7 @@ async function bootstrap() {
           session,
         );
 
-        const existingAssignment = await roleAssignmentModel
+        const existingAssignment = (await roleAssignmentModel
           .findOne({
             organizationId: organization.id,
             principalType: 'USER',
@@ -208,7 +182,7 @@ async function bootstrap() {
             scopeType: 'ORGANIZATION',
             scopeId: organization.id,
           })
-          .session(session);
+          .session(session)) as RoleAssignmentDocument | null;
         if (!existingAssignment) {
           if (userAlreadyExisted) {
             await accessControlService.assignRoleToPrincipal(
@@ -276,9 +250,9 @@ async function bootstrap() {
         const assignedPermissionCount = await rolePermissionModel
           .countDocuments({ roleId: superadminRole.id })
           .session(session);
-        const refreshedRole = await roleModel
+        const refreshedRole = (await roleModel
           .findById(superadminRole.id)
-          .session(session);
+          .session(session)) as RoleDocument | null;
         if (!refreshedRole) {
           throw new Error('Superadmin role disappeared during bootstrap');
         }
@@ -309,38 +283,3 @@ bootstrap().catch((error: unknown) => {
   process.stderr.write(`${message}\n`);
   process.exitCode = 1;
 });
-
-function generatePassword() {
-  return `${randomBytes(18).toString('base64url')}Aa1!`;
-}
-
-async function setActivePasswordCredential(
-  credentialModel: Model<CredentialDocument>,
-  passwordHasherService: PasswordHasherService,
-  userId: string,
-  password: string,
-  session: ClientSession,
-) {
-  const passwordHash = await passwordHasherService.hash(password);
-  await credentialModel.updateMany(
-    {
-      principalId: userId,
-      type: 'PASSWORD',
-      status: 'ACTIVE',
-    },
-    { $set: { status: 'REVOKED', rotatedAt: new Date() } },
-    { session },
-  );
-  await credentialModel.create(
-    [
-      {
-        principalId: userId,
-        type: 'PASSWORD',
-        passwordHash,
-        status: 'ACTIVE',
-        rotatedAt: new Date(),
-      },
-    ],
-    { session },
-  );
-}

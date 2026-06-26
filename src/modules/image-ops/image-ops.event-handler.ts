@@ -7,17 +7,21 @@ import { ImageOpsService } from './image-ops.service';
 export class ImageOpsMissionCompletedHandler
   implements DomainEventHandler, OnModuleInit
 {
+  readonly consumerName = 'image-ops.mission-completed';
+
   constructor(
     private readonly outboxRelayService: OutboxRelayService,
     private readonly imageOpsService: ImageOpsService,
-  ) {}
+  ) {
+    this.outboxRelayService.registerHandler(this);
+  }
 
   onModuleInit() {
     this.outboxRelayService.registerHandler(this);
   }
 
   supports(eventType: string): boolean {
-    return eventType === 'MissionCompleted.v1';
+    return eventType === 'MissionPilotCompleted.v1';
   }
 
   async handle(event: Record<string, unknown>): Promise<void> {
@@ -25,7 +29,7 @@ export class ImageOpsMissionCompletedHandler
       organizationId: String(event.organizationId),
       projectId: String(event.projectId),
       missionId: String(event.missionId),
-      completedBy: String(event.completedBy),
+      completedBy: String(event.actorId),
     });
   }
 }

@@ -8,6 +8,7 @@ import {
   ResolveResource,
 } from 'src/platform/access-control/access-control.decorators';
 import { AuthenticatedPrincipal } from 'src/common/types/authenticated-principal';
+import { MongoIdParamPipe } from 'src/common/pipes/mongo-id-param.pipe';
 import { TransactionManagerService } from 'src/platform/database/transaction-manager.service';
 import { JwtAuthGuard } from 'src/platform/sessions/jwt-auth.guard';
 import { SalesService } from './sales.service';
@@ -84,7 +85,7 @@ export class SalesController {
   @RequirePermission('sales.opportunity.convert_to_project')
   @ResolveResource({ type: 'MODULE', moduleKey: 'sales' })
   async convertToProject(
-    @Param('opportunityId') opportunityId: string,
+    @Param('opportunityId', MongoIdParamPipe) opportunityId: string,
     @Body() dto: ConvertOpportunityDto,
     @CurrentPrincipal() principal: AuthenticatedPrincipal,
   ) {

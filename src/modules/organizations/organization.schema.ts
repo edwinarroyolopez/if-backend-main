@@ -5,7 +5,10 @@ import {
   OrganizationStatus,
 } from 'src/common/types/domain.types';
 
-export type OrganizationDocument = HydratedDocument<Organization>;
+export type OrganizationDocument = Omit<
+  HydratedDocument<Organization>,
+  'id'
+> & { id: string };
 
 @Schema({ collection: 'organizations', timestamps: true })
 export class Organization {

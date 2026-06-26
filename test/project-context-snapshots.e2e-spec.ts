@@ -132,7 +132,7 @@ describe('Project context snapshots', () => {
       const audits = await context.models.auditLogs.find({
         organizationId,
         action: 'projects.context_snapshot.create',
-        resourceId: snapshot.body.id as string,
+        resourceId: snapshot.body.id,
       });
       expect(audits).toHaveLength(1);
 

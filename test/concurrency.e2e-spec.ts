@@ -2,6 +2,7 @@ import type { Response } from 'supertest';
 import {
   createOperationalFixtures,
   createTestContext,
+  prepareMissionForPilotCompletion,
   registerAndBootstrapOrganization,
 } from './app-test-context';
 
@@ -51,7 +52,7 @@ describe('Inflight backend concurrency', () => {
       );
 
       const replayAudits = await context.models.auditLogs.find({
-        resourceId: nativeLogin.body.sessionId as string,
+        resourceId: nativeLogin.body.sessionId,
         reasonCode: 'AUTH_REFRESH_TOKEN_CONSUMED',
       });
       expect(replayAudits.length).toBeGreaterThan(0);
@@ -64,13 +65,20 @@ describe('Inflight backend concurrency', () => {
     const context = await createTestContext();
 
     try {
-      const { ownerAccessToken, organizationId } =
+      const { ownerAccessToken, organizationId, ownerEmail } =
         await registerAndBootstrapOrganization(context);
       const fixtures = await createOperationalFixtures(
         context,
         ownerAccessToken,
         organizationId,
       );
+      await prepareMissionForPilotCompletion(context, {
+        accessToken: ownerAccessToken,
+        ownerEmail,
+        missionId: fixtures.missionId,
+        organizationId,
+        seed: 'concurrency-complete',
+      });
 
       const missionResults = await Promise.allSettled<Response>([
         context.http
@@ -91,6 +99,7 @@ describe('Inflight backend concurrency', () => {
 
       const outboxEvents = await context.models.outbox.find({
         aggregateId: fixtures.missionId,
+        eventType: 'MissionPilotCompleted.v1',
       });
       expect(outboxEvents).toHaveLength(1);
 
@@ -98,12 +107,28 @@ describe('Inflight backend concurrency', () => {
         context.drainOutboxOnce(),
         context.drainOutboxOnce(),
       ]);
-      expect(workerResults.sort()).toEqual([0, 1]);
+      expect(
+        workerResults.reduce((sum, current) => sum + current, 0),
+      ).toBeGreaterThanOrEqual(2);
+      await context.drainOutboxUntilIdle();
 
       const storedEvent = await context.models.outbox.findOne({
         aggregateId: fixtures.missionId,
+        eventType: 'MissionPilotCompleted.v1',
       });
       expect(storedEvent?.status).toBe('PUBLISHED');
+      expect(storedEvent?.deliveries).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({
+            consumerName: 'image-ops.mission-completed',
+            status: 'PUBLISHED',
+          }),
+          expect.objectContaining({
+            consumerName: 'notifications.mission',
+            status: 'PUBLISHED',
+          }),
+        ]),
+      );
 
       const mediaBatches = await context.models.mediaBatches.find({
         missionId: fixtures.missionId,

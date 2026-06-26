@@ -13,8 +13,10 @@ export type TraceableStatement = {
   sourceReferences: Record<string, unknown>[];
 };
 
-export type ProjectRoadmapVersionDocument =
-  HydratedDocument<ProjectRoadmapVersion>;
+export type ProjectRoadmapVersionDocument = Omit<
+  HydratedDocument<ProjectRoadmapVersion>,
+  'id'
+> & { id: string };
 
 @Schema({ collection: 'project_roadmap_versions', timestamps: true })
 export class ProjectRoadmapVersion {

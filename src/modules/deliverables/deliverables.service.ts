@@ -1,9 +1,9 @@
 import { Injectable, OnModuleInit } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
-import { Model } from 'mongoose';
 import { AppException } from 'src/common/errors/app-exception';
 import { REASON_CODES } from 'src/common/errors/reason-codes';
 import { AuthenticatedPrincipal } from 'src/common/types/authenticated-principal';
+import type { HydratedModel } from 'src/common/types/mongoose-model.type';
 import { ProjectsService } from 'src/modules/projects/projects.service';
 import { ResourceScopeService } from 'src/platform/access-control/resource-scope.service';
 import {
@@ -21,7 +21,7 @@ export class DeliverablesService
 {
   constructor(
     @InjectModel(Deliverable.name)
-    private readonly deliverableModel: Model<DeliverableDocument>,
+    private readonly deliverableModel: HydratedModel<DeliverableDocument>,
     private readonly projectsService: ProjectsService,
     private readonly resourceScopeService: ResourceScopeService,
     private readonly auditService: AuditService,

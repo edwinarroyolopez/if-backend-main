@@ -1,11 +1,12 @@
 import {
   createOperationalFixtures,
   createTestContext,
-  loginNativeUser,
   registerAndBootstrapOrganization,
-  registerNativeUser,
 } from './app-test-context';
-import { prepareReadyProject } from './helpers/project-team-readiness';
+import {
+  expectTeamAccessRestrictions,
+  prepareReadyProject,
+} from './helpers/project-team-readiness';
 
 jest.setTimeout(50000);
 
@@ -202,118 +203,15 @@ describe('Project team and final readiness', () => {
         .send({ readiness: 'READY_TO_START' })
         .expect(400);
 
-      const secondOrg = await registerAndBootstrapOrganization(
+      await expectTeamAccessRestrictions({
         context,
-        'project-team-cross-org',
-      );
-      await context.http
-        .get(`/api/v1/projects/${fixtures.projectId}/team`)
-        .set('Authorization', `Bearer ${secondOrg.ownerAccessToken}`)
-        .expect(403);
-      await context.http
-        .post(`/api/v1/projects/${fixtures.projectId}/team`)
-        .set('Authorization', `Bearer ${secondOrg.ownerAccessToken}`)
-        .set('Idempotency-Key', 'team-cross-create')
-        .send({
-          displayName: 'Cross Org',
-          role: 'OBSERVER',
-          capacity: 4,
-          status: 'PLANNED',
-        })
-        .expect(403);
-      await context.http
-        .patch(
-          `/api/v1/projects/${fixtures.projectId}/team/${activated.body.id as string}`,
-        )
-        .set('Authorization', `Bearer ${secondOrg.ownerAccessToken}`)
-        .send({
-          expectedVersion: activated.body.version as number,
-          capacity: 8,
-        })
-        .expect(403);
-      await context.http
-        .post(
-          `/api/v1/projects/${fixtures.projectId}/team/${activated.body.id as string}/deactivate`,
-        )
-        .set('Authorization', `Bearer ${secondOrg.ownerAccessToken}`)
-        .send({ expectedVersion: activated.body.version as number })
-        .expect(403);
-
-      const readRole = await context.http
-        .post('/api/v1/roles')
-        .set('Authorization', `Bearer ${ownerAccessToken}`)
-        .send({ organizationId, key: 'TEAM_READ_ONLY_ROLE', name: 'Team Read' })
-        .expect(201);
-      await context.http
-        .post(`/api/v1/roles/${readRole.body.id as string}/permissions`)
-        .set('Authorization', `Bearer ${ownerAccessToken}`)
-        .send({
-          permissionKeys: ['projects.project.read', 'projects.team.read'],
-        })
-        .expect(201);
-      const readUser = await registerNativeUser(context, {
-        email: 'team-read@test.dev',
-        displayName: 'Team Read',
-        password: 'TeamRead123!',
+        ownerAccessToken,
+        ownerEmail,
+        organizationId,
+        projectId: fixtures.projectId,
+        activeMemberId: activated.body.id as string,
+        activeMemberVersion: activated.body.version as number,
       });
-      await context.http
-        .post('/api/v1/role-assignments')
-        .set('Authorization', `Bearer ${ownerAccessToken}`)
-        .send({
-          organizationId,
-          principalId: readUser.body.user.id as string,
-          roleId: readRole.body.id as string,
-          scopeType: 'ORGANIZATION',
-          scopeId: organizationId,
-        })
-        .expect(201);
-      const readLogin = await loginNativeUser(context, {
-        email: 'team-read@test.dev',
-        password: 'TeamRead123!',
-        activeOrganizationId: organizationId,
-      });
-      await context.http
-        .post(`/api/v1/projects/${fixtures.projectId}/team`)
-        .set('Authorization', `Bearer ${readLogin.body.accessToken as string}`)
-        .set('Idempotency-Key', 'team-no-manage')
-        .send({
-          displayName: 'No Manage',
-          role: 'OBSERVER',
-          capacity: 1,
-          status: 'PLANNED',
-        })
-        .expect(403);
-
-      const readOnlyLogin = await loginNativeUser(context, {
-        email: ownerEmail,
-        password: 'OwnerPassword123!',
-        activeOrganizationId: organizationId,
-      });
-      await context.models.authSessions.updateOne(
-        { _id: readOnlyLogin.body.sessionId as string },
-        { $set: { readOnly: true } },
-      );
-      await context.http
-        .get(`/api/v1/projects/${fixtures.projectId}/team`)
-        .set(
-          'Authorization',
-          `Bearer ${readOnlyLogin.body.accessToken as string}`,
-        )
-        .expect(200);
-      await context.http
-        .post(`/api/v1/projects/${fixtures.projectId}/team`)
-        .set(
-          'Authorization',
-          `Bearer ${readOnlyLogin.body.accessToken as string}`,
-        )
-        .set('Idempotency-Key', 'team-readonly-create')
-        .send({
-          displayName: 'Readonly',
-          role: 'OBSERVER',
-          capacity: 1,
-          status: 'PLANNED',
-        })
-        .expect(403);
 
       const audits = await context.models.auditLogs.find({
         organizationId,

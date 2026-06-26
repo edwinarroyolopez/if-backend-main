@@ -2,7 +2,19 @@ import { Prop, Schema, SchemaFactory } from '@nestjs/mongoose';
 import { HydratedDocument } from 'mongoose';
 import { OUTBOX_STATUSES, OutboxStatus } from 'src/common/types/domain.types';
 
-export type OutboxEventDocument = HydratedDocument<OutboxEvent>;
+export type OutboxEventDocument = Omit<HydratedDocument<OutboxEvent>, 'id'> & {
+  id: string;
+};
+
+export type OutboxDeliveryState = {
+  consumerName: string;
+  status: OutboxStatus;
+  attemptCount: number;
+  nextAttemptAt: Date;
+  lastError?: string;
+  processingStartedAt?: Date;
+  leaseToken?: string;
+};
 
 @Schema({ collection: 'outbox_events', timestamps: true })
 export class OutboxEvent {
@@ -42,6 +54,9 @@ export class OutboxEvent {
   @Prop({ type: String })
   correlationId?: string;
 
+  @Prop({ type: [Object], default: [] })
+  deliveries!: OutboxDeliveryState[];
+
   createdAt!: Date;
   updatedAt!: Date;
 }
@@ -49,5 +64,9 @@ export class OutboxEvent {
 export const OutboxEventSchema = SchemaFactory.createForClass(OutboxEvent);
 
 OutboxEventSchema.index({ status: 1, nextAttemptAt: 1 });
+OutboxEventSchema.index({
+  'deliveries.status': 1,
+  'deliveries.nextAttemptAt': 1,
+});
 OutboxEventSchema.index({ aggregateType: 1, aggregateId: 1, createdAt: 1 });
 OutboxEventSchema.index({ correlationId: 1 });

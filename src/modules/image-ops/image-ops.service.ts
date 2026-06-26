@@ -1,9 +1,9 @@
 import { Injectable, OnModuleInit } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
-import { Model } from 'mongoose';
 import { AppException } from 'src/common/errors/app-exception';
 import { REASON_CODES } from 'src/common/errors/reason-codes';
 import { AuthenticatedPrincipal } from 'src/common/types/authenticated-principal';
+import type { HydratedModel } from 'src/common/types/mongoose-model.type';
 import { FlightOpsService } from 'src/modules/flight-ops/flight-ops.service';
 import { ProjectsService } from 'src/modules/projects/projects.service';
 import { ResourceScopeService } from 'src/platform/access-control/resource-scope.service';
@@ -15,10 +15,12 @@ import {
 import { AuditService } from 'src/platform/audit/audit.service';
 import { TransactionManagerService } from 'src/platform/database/transaction-manager.service';
 import { OutboxService } from 'src/platform/events/outbox.service';
+import { OutboxRelayService } from 'src/platform/events/outbox-relay.service';
+import { resolveImageOpsResource } from './image-ops-resource-resolver';
 import {
-  buildMediaBatchScopeContext,
-  buildSampleScopeContext,
-} from './image-ops.resource-scope';
+  ensureMissionCompletionBatch,
+  listReadableMediaBatches,
+} from './image-ops-read-helpers';
 import { MediaBatch, MediaBatchDocument } from './media-batch.schema';
 import { Sample, SampleDocument } from './sample.schema';
 
@@ -26,19 +28,31 @@ import { Sample, SampleDocument } from './sample.schema';
 export class ImageOpsService implements ResourceScopeResolver, OnModuleInit {
   constructor(
     @InjectModel(MediaBatch.name)
-    private readonly mediaBatchModel: Model<MediaBatchDocument>,
+    private readonly mediaBatchModel: HydratedModel<MediaBatchDocument>,
     @InjectModel(Sample.name)
-    private readonly sampleModel: Model<SampleDocument>,
+    private readonly sampleModel: HydratedModel<SampleDocument>,
     private readonly flightOpsService: FlightOpsService,
     private readonly projectsService: ProjectsService,
     private readonly resourceScopeService: ResourceScopeService,
     private readonly transactionManagerService: TransactionManagerService,
     private readonly auditService: AuditService,
     private readonly outboxService: OutboxService,
+    private readonly outboxRelayService: OutboxRelayService,
   ) {}
 
   onModuleInit() {
     this.resourceScopeService.registerResolver(this);
+    this.outboxRelayService.registerHandler({
+      consumerName: 'image-ops.mission-completed',
+      supports: (eventType) => eventType === 'MissionPilotCompleted.v1',
+      handle: (event) =>
+        this.handleMissionCompletedEvent({
+          organizationId: String(event.organizationId),
+          projectId: String(event.projectId),
+          missionId: String(event.missionId),
+          completedBy: String(event.actorId),
+        }),
+    });
   }
 
   supports(resourceType: string): boolean {
@@ -46,33 +60,13 @@ export class ImageOpsService implements ResourceScopeResolver, OnModuleInit {
   }
 
   async resolve(reference: ResourceReference): Promise<ResourceScopeContext> {
-    if (reference.resourceType === 'SAMPLE') {
-      const sample = await this.sampleModel.findById(reference.resourceId);
-      if (!sample) {
-        throw new AppException(
-          404,
-          REASON_CODES.RESOURCE_NOT_FOUND,
-          'Sample was not found',
-        );
-      }
-      const project = await this.projectsService.findById(sample.projectId);
-      return buildSampleScopeContext(sample, project?.accessRoleIds ?? []);
-    }
-
-    const mediaBatch = await this.mediaBatchModel.findById(
-      reference.resourceId,
-    );
-    if (!mediaBatch) {
-      throw new AppException(
-        404,
-        REASON_CODES.RESOURCE_NOT_FOUND,
-        'Media batch was not found',
-      );
-    }
-    const project = await this.projectsService.findById(mediaBatch.projectId);
-    return buildMediaBatchScopeContext(
-      mediaBatch,
-      project?.accessRoleIds ?? [],
+    return resolveImageOpsResource(
+      {
+        mediaBatchModel: this.mediaBatchModel,
+        sampleModel: this.sampleModel,
+        projectsService: this.projectsService,
+      },
+      reference,
     );
   }
 
@@ -82,20 +76,7 @@ export class ImageOpsService implements ResourceScopeResolver, OnModuleInit {
     missionId: string;
     completedBy: string;
   }) {
-    await this.mediaBatchModel.updateOne(
-      { missionId: event.missionId },
-      {
-        $setOnInsert: {
-          organizationId: event.organizationId,
-          projectId: event.projectId,
-          missionId: event.missionId,
-          key: `batch-${event.missionId}`,
-          status: 'PENDING_INGEST',
-          createdBy: event.completedBy,
-        },
-      },
-      { upsert: true },
-    );
+    await ensureMissionCompletionBatch(this.mediaBatchModel, event);
   }
 
   async ingestMediaBatch(
@@ -304,30 +285,10 @@ export class ImageOpsService implements ResourceScopeResolver, OnModuleInit {
   }
 
   async listMediaBatches(principal: AuthenticatedPrincipal) {
-    const organizationId = principal.activeOrganizationId;
-    if (!organizationId) {
-      return [];
-    }
-
-    const accessibleProjectIds =
-      await this.projectsService.listAccessibleProjectIds(
-        principal,
-        'image',
-        'image.media_batch.read',
-      );
-    if (accessibleProjectIds.length === 0) {
-      return [];
-    }
-
-    const batches = await this.mediaBatchModel
-      .find({ organizationId, projectId: { $in: accessibleProjectIds } })
-      .sort({ createdAt: -1 });
-    return batches.map((batch) => ({
-      id: batch.id,
-      missionId: batch.missionId,
-      projectId: batch.projectId,
-      key: batch.key,
-      status: batch.status,
-    }));
+    return listReadableMediaBatches(
+      this.mediaBatchModel,
+      this.projectsService,
+      principal,
+    );
   }
 }

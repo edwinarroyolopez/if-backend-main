@@ -1,9 +1,9 @@
 import {
   createOperationalFixtures,
   createTestContext,
-  loginNativeUser,
   registerAndBootstrapOrganization,
 } from './app-test-context';
+import { expectBacklogAccessRestrictions } from './helpers/project-backlog-access-assertions';
 import {
   copyBacklogSourceFields,
   createActiveBacklogRoadmap,
@@ -219,141 +219,19 @@ describe('Project backlog', () => {
         ),
       ).toBe(true);
 
-      const secondOrg = await registerAndBootstrapOrganization(
+      await expectBacklogAccessRestrictions({
         context,
-        'project-backlog-cross-org',
-      );
-      await context.http
-        .get(`/api/v1/projects/${fixtures.projectId}/backlog`)
-        .set('Authorization', `Bearer ${secondOrg.ownerAccessToken}`)
-        .expect(403);
-      await context.http
-        .post(
-          `/api/v1/projects/${fixtures.projectId}/backlog/import-from-roadmap/preview`,
-        )
-        .set('Authorization', `Bearer ${secondOrg.ownerAccessToken}`)
-        .expect(403);
-      await context.http
-        .post(
-          `/api/v1/projects/${fixtures.projectId}/backlog/import-from-roadmap/commit`,
-        )
-        .set('Authorization', `Bearer ${secondOrg.ownerAccessToken}`)
-        .set('Idempotency-Key', 'backlog-cross-commit')
-        .send({ previewToken: preview.body.previewToken as string })
-        .expect(403);
-      await context.http
-        .post(`/api/v1/projects/${fixtures.projectId}/backlog`)
-        .set('Authorization', `Bearer ${secondOrg.ownerAccessToken}`)
-        .set('Idempotency-Key', 'backlog-cross-create')
-        .send({
-          ...copyBacklogSourceFields(listed.body.items[0]),
-          title: 'Cross org',
-          type: 'TASK',
-          priority: 1,
-          estimate: { unit: 'POINTS', value: 1 },
-        })
-        .expect(403);
-      await context.http
-        .patch(
-          `/api/v1/projects/${fixtures.projectId}/backlog/${updated.body.id as string}`,
-        )
-        .set('Authorization', `Bearer ${secondOrg.ownerAccessToken}`)
-        .send({ expectedVersion: updated.body.version as number, priority: 1 })
-        .expect(403);
-      await context.http
-        .post(`/api/v1/projects/${fixtures.projectId}/backlog/reorder`)
-        .set('Authorization', `Bearer ${secondOrg.ownerAccessToken}`)
-        .set('Idempotency-Key', 'backlog-cross-reorder')
-        .send({
-          items: [
-            {
-              id: updated.body.id as string,
-              order: 0,
-              expectedVersion: updated.body.version as number,
-            },
-          ],
-        })
-        .expect(403);
-      await context.http
-        .post(
-          `/api/v1/projects/${fixtures.projectId}/backlog/${updated.body.id as string}/archive`,
-        )
-        .set('Authorization', `Bearer ${secondOrg.ownerAccessToken}`)
-        .send({ expectedVersion: updated.body.version as number })
-        .expect(403);
-
-      const readOnlyLogin = await loginNativeUser(context, {
-        email: ownerEmail,
-        password: 'OwnerPassword123!',
-        activeOrganizationId: organizationId,
+        ownerEmail,
+        ownerAccessToken,
+        organizationId,
+        projectId: fixtures.projectId,
+        previewToken: preview.body.previewToken as string,
+        sourceItem: listed.body.items[0],
+        updatedItem: {
+          id: updated.body.id as string,
+          version: updated.body.version as number,
+        },
       });
-      await context.models.authSessions.updateOne(
-        { _id: readOnlyLogin.body.sessionId as string },
-        { $set: { readOnly: true } },
-      );
-      const readOnlyToken = readOnlyLogin.body.accessToken as string;
-      await context.http
-        .post(
-          `/api/v1/projects/${fixtures.projectId}/backlog/import-from-roadmap/commit`,
-        )
-        .set('Authorization', `Bearer ${readOnlyToken}`)
-        .set('Idempotency-Key', 'backlog-readonly-commit')
-        .send({ previewToken: preview.body.previewToken as string })
-        .expect(403);
-      await context.http
-        .post(`/api/v1/projects/${fixtures.projectId}/backlog`)
-        .set('Authorization', `Bearer ${readOnlyToken}`)
-        .set('Idempotency-Key', 'backlog-readonly-create')
-        .send({
-          ...copyBacklogSourceFields(listed.body.items[0]),
-          title: 'Read only',
-          type: 'TASK',
-          priority: 1,
-          estimate: { unit: 'POINTS', value: 1 },
-        })
-        .expect(403);
-      await context.http
-        .patch(
-          `/api/v1/projects/${fixtures.projectId}/backlog/${updated.body.id as string}`,
-        )
-        .set('Authorization', `Bearer ${readOnlyToken}`)
-        .send({ expectedVersion: updated.body.version as number, priority: 1 })
-        .expect(403);
-      await context.http
-        .post(`/api/v1/projects/${fixtures.projectId}/backlog/reorder`)
-        .set('Authorization', `Bearer ${readOnlyToken}`)
-        .set('Idempotency-Key', 'backlog-readonly-reorder')
-        .send({
-          items: [
-            {
-              id: updated.body.id as string,
-              order: 0,
-              expectedVersion: updated.body.version as number,
-            },
-          ],
-        })
-        .expect(403);
-      await context.http
-        .post(
-          `/api/v1/projects/${fixtures.projectId}/backlog/${updated.body.id as string}/archive`,
-        )
-        .set('Authorization', `Bearer ${readOnlyToken}`)
-        .send({ expectedVersion: updated.body.version as number })
-        .expect(403);
-
-      for (const action of [
-        'projects.backlog.import_commit',
-        'projects.backlog.create',
-        'projects.backlog.update',
-        'projects.backlog.reorder',
-        'projects.backlog.archive',
-      ]) {
-        const audit = await context.models.auditLogs.findOne({
-          organizationId,
-          action,
-        });
-        expect(audit).toBeTruthy();
-      }
     } finally {
       await context.close();
     }

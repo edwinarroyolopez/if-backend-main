@@ -1,20 +1,17 @@
 import { Injectable } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
-import { ClientSession, Model } from 'mongoose';
+import { ClientSession } from 'mongoose';
 import { AppException } from 'src/common/errors/app-exception';
 import { REASON_CODES } from 'src/common/errors/reason-codes';
 import { RoleAssignmentStatus } from 'src/common/types/domain.types';
+import type { HydratedModel } from 'src/common/types/mongoose-model.type';
+import { isObjectId } from 'src/common/utils/object-id.util';
 import { IdentityService } from 'src/platform/identity/identity.service';
 import {
   PermissionDefinition,
   PermissionDefinitionDocument,
 } from './permission-definition.schema';
-import {
-  DEFAULT_BOOTSTRAP_ROLE_KEY,
-  DEFAULT_ORG_ROLE_TEMPLATES,
-  PERMISSION_REGISTRY,
-  SUPERADMIN_ROLE_KEY,
-} from './permission-registry';
+import { SUPERADMIN_ROLE_KEY } from './permission-registry';
 import { PermissionCatalogService } from './permission-catalog.service';
 import {
   RoleAssignment,
@@ -27,17 +24,22 @@ import {
 import { Role, RoleDocument } from './role.schema';
 import { ResourceScopeContext } from './resource-scope.types';
 import { AccessControlScopeValidatorService } from './access-control-scope-validator.service';
+import {
+  createDefaultRolesForOrganization,
+  reconcileSystemDefinedRolePermissions,
+} from './access-control-role-bootstrap';
 
 @Injectable()
 export class AccessControlRoleManagerService {
   constructor(
     @InjectModel(PermissionDefinition.name)
-    private readonly permissionDefinitionModel: Model<PermissionDefinitionDocument>,
-    @InjectModel(Role.name) private readonly roleModel: Model<RoleDocument>,
+    private readonly permissionDefinitionModel: HydratedModel<PermissionDefinitionDocument>,
+    @InjectModel(Role.name)
+    private readonly roleModel: HydratedModel<RoleDocument>,
     @InjectModel(RolePermission.name)
-    private readonly rolePermissionModel: Model<RolePermissionDocument>,
+    private readonly rolePermissionModel: HydratedModel<RolePermissionDocument>,
     @InjectModel(RoleAssignment.name)
-    private readonly roleAssignmentModel: Model<RoleAssignmentDocument>,
+    private readonly roleAssignmentModel: HydratedModel<RoleAssignmentDocument>,
     private readonly identityService: IdentityService,
     private readonly permissionCatalogService: PermissionCatalogService,
     private readonly scopeValidator: AccessControlScopeValidatorService,
@@ -75,17 +77,34 @@ export class AccessControlRoleManagerService {
   }
 
   async assignPermissionsToRole(
+    organizationId: string,
     roleId: string,
     permissionKeys: string[],
     session: ClientSession,
   ) {
     const uniquePermissionKeys = [...new Set(permissionKeys)];
-    const role = await this.roleModel.findById(roleId).session(session);
+    if (!isObjectId(roleId)) {
+      throw new AppException(
+        404,
+        REASON_CODES.RESOURCE_NOT_FOUND,
+        'Role was not found',
+      );
+    }
+    const role = await this.roleModel
+      .findOne({ _id: roleId, organizationId })
+      .session(session);
     if (!role) {
       throw new AppException(
         404,
         REASON_CODES.RESOURCE_NOT_FOUND,
         'Role was not found',
+      );
+    }
+    if (role.status !== 'ACTIVE') {
+      throw new AppException(
+        409,
+        REASON_CODES.RESOURCE_STATE_CONFLICT,
+        'Role is not active',
       );
     }
 
@@ -204,70 +223,13 @@ export class AccessControlRoleManagerService {
   }
 
   async reconcileSystemDefinedRolePermissions() {
-    const permissions = await this.permissionDefinitionModel.find({
-      status: 'ACTIVE',
+    await reconcileSystemDefinedRolePermissions({
+      permissionDefinitionModel: this.permissionDefinitionModel,
+      roleModel: this.roleModel,
+      rolePermissionModel: this.rolePermissionModel,
+      roleAssignmentModel: this.roleAssignmentModel,
+      identityService: this.identityService,
     });
-    const permissionByKey = new Map(
-      permissions.map((permission) => [permission.key, permission]),
-    );
-    const activePermissionKeys = permissions.map(
-      (permission) => permission.key,
-    );
-    const expectedPermissionKeysByRoleKey = new Map<string, readonly string[]>([
-      ...Object.entries(DEFAULT_ORG_ROLE_TEMPLATES),
-      [SUPERADMIN_ROLE_KEY, activePermissionKeys],
-    ]);
-    const roles = await this.roleModel.find({
-      key: { $in: [...expectedPermissionKeysByRoleKey.keys()] },
-      status: 'ACTIVE',
-      systemDefined: true,
-    });
-
-    for (const role of roles) {
-      const expectedPermissionKeys = expectedPermissionKeysByRoleKey.get(
-        role.key,
-      );
-      if (!expectedPermissionKeys) continue;
-
-      const uniqueExpectedPermissionKeys = [...new Set(expectedPermissionKeys)];
-      const expectedPermissionIds = uniqueExpectedPermissionKeys
-        .map((permissionKey) => permissionByKey.get(permissionKey)?.id)
-        .filter(
-          (permissionId): permissionId is string =>
-            typeof permissionId === 'string',
-        );
-      if (
-        expectedPermissionIds.length !== uniqueExpectedPermissionKeys.length
-      ) {
-        continue;
-      }
-
-      const existingPermissions = await this.rolePermissionModel.find({
-        roleId: role.id,
-      });
-      const existingPermissionIds = existingPermissions.map(
-        (permission) => permission.permissionId,
-      );
-      const alreadySynced =
-        existingPermissionIds.length === expectedPermissionIds.length &&
-        expectedPermissionIds.every((permissionId) =>
-          existingPermissionIds.includes(permissionId),
-        );
-      if (alreadySynced) continue;
-
-      await this.rolePermissionModel.deleteMany({ roleId: role.id });
-      if (expectedPermissionIds.length > 0) {
-        await this.rolePermissionModel.insertMany(
-          expectedPermissionIds.map((permissionId) => ({
-            roleId: role.id,
-            permissionId,
-          })),
-          { ordered: true },
-        );
-      }
-      role.version += 1;
-      await role.save();
-    }
   }
 
   async createDefaultRolesForOrganization(
@@ -275,87 +237,18 @@ export class AccessControlRoleManagerService {
     actorUserId: string,
     session: ClientSession,
   ) {
-    const roleTemplates = Object.entries(DEFAULT_ORG_ROLE_TEMPLATES);
-    const permissions = await this.permissionDefinitionModel
-      .find({ key: { $in: [...PERMISSION_REGISTRY] }, status: 'ACTIVE' })
-      .session(session);
-    const permissionByKey = new Map(
-      permissions.map((permission) => [permission.key, permission]),
-    );
-    const missingPermission = PERMISSION_REGISTRY.find(
-      (permissionKey) => !permissionByKey.has(permissionKey),
-    );
-    if (missingPermission) {
-      throw new AppException(
-        404,
-        REASON_CODES.RESOURCE_NOT_FOUND,
-        'Permission definition was not found',
-      );
-    }
-
-    const roles = await this.roleModel.insertMany(
-      roleTemplates.map(([roleKey]) => ({
-        organizationId,
-        key: roleKey,
-        name: roleKey.replaceAll('_', ' '),
-        status: 'ACTIVE',
-        version: 2,
-        systemDefined: true,
-      })),
-      { session, ordered: true },
-    );
-    const roleByKey = new Map(roles.map((role) => [role.key, role]));
-    const rolePermissions = roleTemplates.flatMap(
-      ([roleKey, permissionKeys]) => {
-        const role = roleByKey.get(roleKey);
-        if (!role) return [];
-
-        return [...new Set(permissionKeys)].map((permissionKey) => ({
-          roleId: role.id,
-          permissionId: permissionByKey.get(permissionKey)!.id,
-        }));
+    await createDefaultRolesForOrganization(
+      {
+        permissionDefinitionModel: this.permissionDefinitionModel,
+        roleModel: this.roleModel,
+        rolePermissionModel: this.rolePermissionModel,
+        roleAssignmentModel: this.roleAssignmentModel,
+        identityService: this.identityService,
       },
-    );
-    await this.rolePermissionModel.insertMany(rolePermissions, {
-      session,
-      ordered: true,
-    });
-
-    const bootstrapRole = roleByKey.get(DEFAULT_BOOTSTRAP_ROLE_KEY);
-    if (!bootstrapRole) {
-      throw new AppException(
-        404,
-        REASON_CODES.RESOURCE_NOT_FOUND,
-        'Role was not found',
-      );
-    }
-
-    await this.roleAssignmentModel.create(
-      [
-        {
-          organizationId,
-          principalType: 'USER',
-          principalId: actorUserId,
-          roleId: bootstrapRole.id,
-          scopeType: 'ORGANIZATION',
-          scopeId: organizationId,
-          status: 'ACTIVE' satisfies RoleAssignmentStatus,
-          assignedBy: actorUserId,
-        },
-      ],
-      { session },
-    );
-    const user = await this.identityService.bumpAuthorizationVersion(
+      organizationId,
       actorUserId,
       session,
     );
-    if (!user) {
-      throw new AppException(
-        404,
-        REASON_CODES.RESOURCE_NOT_FOUND,
-        'User was not found',
-      );
-    }
   }
 
   async findRoleByKey(

@@ -106,12 +106,14 @@ export class AccessControlController {
   @RequirePermission('admin.permission.assign')
   @ResolveResource({ type: 'MODULE', moduleKey: 'admin' })
   async assignPermissions(
+    @CurrentPrincipal() principal: AuthenticatedPrincipal,
     @Param('roleId') roleId: string,
     @Body() dto: AssignPermissionsDto,
   ) {
     const updatedRole = await this.transactionManagerService.runInTransaction(
       (session) =>
         this.accessControlService.assignPermissionsToRole(
+          principal.activeOrganizationId!,
           roleId,
           dto.permissionKeys,
           session,

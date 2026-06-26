@@ -42,7 +42,10 @@ export type ProjectDocumentChecklistItem = {
   completed: boolean;
 };
 
-export type ProjectDocumentPageDocument = HydratedDocument<ProjectDocumentPage>;
+export type ProjectDocumentPageDocument = Omit<
+  HydratedDocument<ProjectDocumentPage>,
+  'id'
+> & { id: string };
 
 @Schema({ collection: 'project_document_pages', timestamps: true })
 export class ProjectDocumentPage {

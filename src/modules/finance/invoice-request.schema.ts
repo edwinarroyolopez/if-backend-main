@@ -5,7 +5,10 @@ import {
   InvoiceRequestStatus,
 } from 'src/common/types/domain.types';
 
-export type InvoiceRequestDocument = HydratedDocument<InvoiceRequest>;
+export type InvoiceRequestDocument = Omit<
+  HydratedDocument<InvoiceRequest>,
+  'id'
+> & { id: string };
 
 @Schema({ collection: 'invoice_requests', timestamps: true })
 export class InvoiceRequest {

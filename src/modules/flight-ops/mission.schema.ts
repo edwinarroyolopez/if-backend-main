@@ -2,7 +2,9 @@ import { Prop, Schema, SchemaFactory } from '@nestjs/mongoose';
 import { HydratedDocument } from 'mongoose';
 import { MISSION_STATUSES, MissionStatus } from 'src/common/types/domain.types';
 
-export type MissionDocument = HydratedDocument<Mission>;
+export type MissionDocument = Omit<HydratedDocument<Mission>, 'id'> & {
+  id: string;
+};
 
 export const ASSIGNMENT_STATUSES = [
   'UNASSIGNED',

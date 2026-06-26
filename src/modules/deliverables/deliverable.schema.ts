@@ -5,7 +5,9 @@ import {
   DeliverableStatus,
 } from 'src/common/types/domain.types';
 
-export type DeliverableDocument = HydratedDocument<Deliverable>;
+export type DeliverableDocument = Omit<HydratedDocument<Deliverable>, 'id'> & {
+  id: string;
+};
 
 @Schema({ collection: 'deliverables', timestamps: true })
 export class Deliverable {

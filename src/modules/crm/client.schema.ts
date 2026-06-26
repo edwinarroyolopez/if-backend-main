@@ -2,7 +2,9 @@ import { Prop, Schema, SchemaFactory } from '@nestjs/mongoose';
 import { HydratedDocument } from 'mongoose';
 import { CLIENT_STATUSES, ClientStatus } from 'src/common/types/domain.types';
 
-export type ClientDocument = HydratedDocument<Client>;
+export type ClientDocument = Omit<HydratedDocument<Client>, 'id'> & {
+  id: string;
+};
 
 @Schema({ collection: 'clients', timestamps: true })
 export class Client {

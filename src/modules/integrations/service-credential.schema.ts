@@ -1,7 +1,10 @@
 import { Prop, Schema, SchemaFactory } from '@nestjs/mongoose';
 import { HydratedDocument } from 'mongoose';
 
-export type ServiceCredentialDocument = HydratedDocument<ServiceCredential>;
+export type ServiceCredentialDocument = Omit<
+  HydratedDocument<ServiceCredential>,
+  'id'
+> & { id: string };
 
 @Schema({ collection: 'service_credentials', timestamps: true })
 export class ServiceCredential {
@@ -31,4 +34,5 @@ export const ServiceCredentialSchema =
   SchemaFactory.createForClass(ServiceCredential);
 
 ServiceCredentialSchema.index({ serviceAccountId: 1, status: 1 });
+ServiceCredentialSchema.index({ keyId: 1 }, { unique: true });
 ServiceCredentialSchema.index({ expiresAt: 1 });

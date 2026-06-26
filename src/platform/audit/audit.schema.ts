@@ -7,7 +7,9 @@ import {
   AuditDecision,
 } from 'src/common/types/domain.types';
 
-export type AuditLogDocument = HydratedDocument<AuditLog>;
+export type AuditLogDocument = Omit<HydratedDocument<AuditLog>, 'id'> & {
+  id: string;
+};
 
 @Schema({
   collection: 'audit_logs',

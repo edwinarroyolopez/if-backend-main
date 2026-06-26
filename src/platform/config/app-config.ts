@@ -28,6 +28,10 @@ export type ValidatedEnv = {
   documentImportPreviewTokenSecret: string;
   ifConnectorsBaseUrl: string;
   ifConnectorsTimeoutMs: number;
+  ifConnectorsSecretKey: string;
+  cloudinaryCloudName?: string;
+  cloudinaryApiKey?: string;
+  cloudinaryApiSecret?: string;
 };
 
 export function validateEnv(rawEnv: Record<string, unknown>): ValidatedEnv {
@@ -95,6 +99,14 @@ export function validateEnv(rawEnv: Record<string, unknown>): ValidatedEnv {
       env.IF_CONNECTORS_TIMEOUT_MS,
       'IF_CONNECTORS_TIMEOUT_MS',
     ),
+    ifConnectorsSecretKey:
+      env.IF_CONNECTORS_SECRET_KEY?.trim() ||
+      (env.NODE_ENV === 'production'
+        ? requireValue(env.IF_CONNECTORS_SECRET_KEY, 'IF_CONNECTORS_SECRET_KEY')
+        : 'inflight-test-connectors-secret-key'),
+    cloudinaryCloudName: env.CLOUDINARY_CLOUD?.trim() || undefined,
+    cloudinaryApiKey: env.CLOUDINARY_KEY?.trim() || undefined,
+    cloudinaryApiSecret: env.CLOUDINARY_SECRET?.trim() || undefined,
   };
 
   if (validated.corsOrigins.length === 0) {
@@ -102,6 +114,27 @@ export function validateEnv(rawEnv: Record<string, unknown>): ValidatedEnv {
   }
   if (validated.ifConnectorsTimeoutMs <= 0) {
     throw new Error('IF_CONNECTORS_TIMEOUT_MS must be greater than zero');
+  }
+  if (validated.ifConnectorsSecretKey.length < 24) {
+    throw new Error('IF_CONNECTORS_SECRET_KEY must be at least 24 characters');
+  }
+  const hasPartialCloudinaryConfig = Boolean(
+    validated.cloudinaryCloudName ||
+    validated.cloudinaryApiKey ||
+    validated.cloudinaryApiSecret,
+  );
+  const hasCompleteCloudinaryConfig = Boolean(
+    validated.cloudinaryCloudName &&
+    validated.cloudinaryApiKey &&
+    validated.cloudinaryApiSecret,
+  );
+  if (hasPartialCloudinaryConfig && !hasCompleteCloudinaryConfig) {
+    throw new Error(
+      'CLOUDINARY_CLOUD, CLOUDINARY_KEY and CLOUDINARY_SECRET must be configured together',
+    );
+  }
+  if (validated.nodeEnv === 'production' && !hasCompleteCloudinaryConfig) {
+    throw new Error('Cloudinary configuration is required in production');
   }
 
   return validated;

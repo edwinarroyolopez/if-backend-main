@@ -1,6 +1,6 @@
 import { Injectable } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
-import { Model } from 'mongoose';
+import type { HydratedModel } from 'src/common/types/mongoose-model.type';
 import { IdentityService } from 'src/platform/identity/identity.service';
 import {
   PermissionDefinition,
@@ -20,12 +20,13 @@ import { Role, RoleDocument } from './role.schema';
 export class AccessControlReadersService {
   constructor(
     @InjectModel(PermissionDefinition.name)
-    private readonly permissionDefinitionModel: Model<PermissionDefinitionDocument>,
-    @InjectModel(Role.name) private readonly roleModel: Model<RoleDocument>,
+    private readonly permissionDefinitionModel: HydratedModel<PermissionDefinitionDocument>,
+    @InjectModel(Role.name)
+    private readonly roleModel: HydratedModel<RoleDocument>,
     @InjectModel(RolePermission.name)
-    private readonly rolePermissionModel: Model<RolePermissionDocument>,
+    private readonly rolePermissionModel: HydratedModel<RolePermissionDocument>,
     @InjectModel(RoleAssignment.name)
-    private readonly roleAssignmentModel: Model<RoleAssignmentDocument>,
+    private readonly roleAssignmentModel: HydratedModel<RoleAssignmentDocument>,
     private readonly identityService: IdentityService,
   ) {}
 

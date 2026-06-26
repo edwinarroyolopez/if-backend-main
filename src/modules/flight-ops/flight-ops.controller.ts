@@ -21,6 +21,7 @@ import {
 import { AuthenticatedPrincipal } from 'src/common/types/authenticated-principal';
 import { AppException } from 'src/common/errors/app-exception';
 import { REASON_CODES } from 'src/common/errors/reason-codes';
+import { MongoIdParamPipe } from 'src/common/pipes/mongo-id-param.pipe';
 import { JwtAuthGuard } from 'src/platform/sessions/jwt-auth.guard';
 import {
   AssignMissionDto,
@@ -33,6 +34,10 @@ import {
   ReviewCloseMissionDto,
 } from './flight-ops.dto';
 import { FlightOpsService } from './flight-ops.service';
+import {
+  MAX_MISSION_MEDIA_BYTES,
+  missionMediaFileFilter,
+} from './mission-media-file.policy';
 
 @Controller('missions')
 @UseGuards(JwtAuthGuard, ReadOnlySessionGuard, PermissionGuard)
@@ -74,7 +79,7 @@ export class FlightOpsController {
   @ResolveResource({ type: 'MISSION', param: 'missionId', moduleKey: 'flight' })
   async getMission(
     @CurrentPrincipal() principal: AuthenticatedPrincipal,
-    @Param('missionId') missionId: string,
+    @Param('missionId', MongoIdParamPipe) missionId: string,
   ) {
     return this.flightOpsService.getMission(principal, missionId);
   }
@@ -84,7 +89,7 @@ export class FlightOpsController {
   @ResolveResource({ type: 'MISSION', param: 'missionId', moduleKey: 'flight' })
   async assignMission(
     @CurrentPrincipal() principal: AuthenticatedPrincipal,
-    @Param('missionId') missionId: string,
+    @Param('missionId', MongoIdParamPipe) missionId: string,
     @Body() dto: AssignMissionDto,
     @Headers('idempotency-key') idempotencyKey: string | undefined,
   ) {
@@ -101,7 +106,7 @@ export class FlightOpsController {
   @ResolveResource({ type: 'MISSION', param: 'missionId', moduleKey: 'flight' })
   async acceptMission(
     @CurrentPrincipal() principal: AuthenticatedPrincipal,
-    @Param('missionId') missionId: string,
+    @Param('missionId', MongoIdParamPipe) missionId: string,
     @Headers('idempotency-key') idempotencyKey: string | undefined,
   ) {
     return this.flightOpsService.acceptMission(
@@ -116,7 +121,7 @@ export class FlightOpsController {
   @ResolveResource({ type: 'MISSION', param: 'missionId', moduleKey: 'flight' })
   async rejectMission(
     @CurrentPrincipal() principal: AuthenticatedPrincipal,
-    @Param('missionId') missionId: string,
+    @Param('missionId', MongoIdParamPipe) missionId: string,
     @Body() dto: RejectMissionDto,
     @Headers('idempotency-key') idempotencyKey: string | undefined,
   ) {
@@ -133,7 +138,7 @@ export class FlightOpsController {
   @ResolveResource({ type: 'MISSION', param: 'missionId', moduleKey: 'flight' })
   async startMission(
     @CurrentPrincipal() principal: AuthenticatedPrincipal,
-    @Param('missionId') missionId: string,
+    @Param('missionId', MongoIdParamPipe) missionId: string,
     @Headers('idempotency-key') idempotencyKey: string | undefined,
   ) {
     return this.flightOpsService.startMission(
@@ -146,13 +151,23 @@ export class FlightOpsController {
   @Post(':missionId/media')
   @RequirePermission('flight.media.upload')
   @ResolveResource({ type: 'MISSION', param: 'missionId', moduleKey: 'flight' })
-  @UseInterceptors(FileInterceptor('file'))
+  @UseInterceptors(
+    FileInterceptor('file', {
+      limits: { fileSize: MAX_MISSION_MEDIA_BYTES, files: 1 },
+      fileFilter: missionMediaFileFilter,
+    }),
+  )
   async uploadMissionMedia(
     @CurrentPrincipal() principal: AuthenticatedPrincipal,
-    @Param('missionId') missionId: string,
+    @Param('missionId', MongoIdParamPipe) missionId: string,
     @UploadedFile()
     file:
-      | { buffer: Buffer; mimetype: string; originalname: string }
+      | {
+          buffer: Buffer;
+          mimetype: string;
+          originalname: string;
+          size?: number;
+        }
       | undefined,
     @Headers('idempotency-key') idempotencyKey: string | undefined,
   ) {
@@ -169,7 +184,7 @@ export class FlightOpsController {
   @ResolveResource({ type: 'MISSION', param: 'missionId', moduleKey: 'flight' })
   async completeMission(
     @CurrentPrincipal() principal: AuthenticatedPrincipal,
-    @Param('missionId') missionId: string,
+    @Param('missionId', MongoIdParamPipe) missionId: string,
     @Body() dto: CompleteMissionDto,
     @Headers('idempotency-key') idempotencyKey: string | undefined,
   ) {
@@ -186,7 +201,7 @@ export class FlightOpsController {
   @ResolveResource({ type: 'MISSION', param: 'missionId', moduleKey: 'flight' })
   async reviewCloseMission(
     @CurrentPrincipal() principal: AuthenticatedPrincipal,
-    @Param('missionId') missionId: string,
+    @Param('missionId', MongoIdParamPipe) missionId: string,
     @Body() dto: ReviewCloseMissionDto,
     @Headers('idempotency-key') idempotencyKey: string | undefined,
   ) {
@@ -203,7 +218,7 @@ export class FlightOpsController {
   @ResolveResource({ type: 'MISSION', param: 'missionId', moduleKey: 'flight' })
   async cancelMission(
     @CurrentPrincipal() principal: AuthenticatedPrincipal,
-    @Param('missionId') missionId: string,
+    @Param('missionId', MongoIdParamPipe) missionId: string,
     @Body() dto: MissionObservationDto,
     @Headers('idempotency-key') idempotencyKey: string | undefined,
   ) {
@@ -220,7 +235,7 @@ export class FlightOpsController {
   @ResolveResource({ type: 'MISSION', param: 'missionId', moduleKey: 'flight' })
   async failMission(
     @CurrentPrincipal() principal: AuthenticatedPrincipal,
-    @Param('missionId') missionId: string,
+    @Param('missionId', MongoIdParamPipe) missionId: string,
     @Body() dto: FailMissionDto,
     @Headers('idempotency-key') idempotencyKey: string | undefined,
   ) {

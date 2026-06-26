@@ -9,7 +9,10 @@ export const PROJECT_SPRINT_STATUSES = [
 ] as const;
 export type ProjectSprintStatus = (typeof PROJECT_SPRINT_STATUSES)[number];
 
-export type ProjectSprintDocument = HydratedDocument<ProjectSprint>;
+export type ProjectSprintDocument = Omit<
+  HydratedDocument<ProjectSprint>,
+  'id'
+> & { id: string };
 
 @Schema({ collection: 'project_sprints', timestamps: true })
 export class ProjectSprint {

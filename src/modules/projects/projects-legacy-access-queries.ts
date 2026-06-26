@@ -239,20 +239,15 @@ export abstract class ProjectsLegacyAccessQueries extends ProjectsLegacyDocument
       }
       return undefined;
     }
-    const client = await this.crmService.findById(clientId);
+    const client = await this.crmService.findActiveByIdForOrganization(
+      clientId,
+      organizationId,
+    );
     if (!client) {
       throw new AppException(
         404,
         REASON_CODES.RESOURCE_NOT_FOUND,
         'Client was not found',
-        { field: 'clientId' },
-      );
-    }
-    if (client.organizationId !== organizationId) {
-      throw new AppException(
-        409,
-        REASON_CODES.RESOURCE_STATE_CONFLICT,
-        'Client does not belong to the requested organization',
         { field: 'clientId' },
       );
     }

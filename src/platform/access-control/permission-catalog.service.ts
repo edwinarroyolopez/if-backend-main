@@ -1,6 +1,7 @@
 import { Injectable } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
-import { ClientSession, Model } from 'mongoose';
+import { ClientSession } from 'mongoose';
+import type { HydratedModel } from 'src/common/types/mongoose-model.type';
 import {
   PermissionDefinition,
   PermissionDefinitionDocument,
@@ -16,10 +17,11 @@ import { Role, RoleDocument } from './role.schema';
 export class PermissionCatalogService {
   constructor(
     @InjectModel(PermissionDefinition.name)
-    private readonly permissionDefinitionModel: Model<PermissionDefinitionDocument>,
-    @InjectModel(Role.name) private readonly roleModel: Model<RoleDocument>,
+    private readonly permissionDefinitionModel: HydratedModel<PermissionDefinitionDocument>,
+    @InjectModel(Role.name)
+    private readonly roleModel: HydratedModel<RoleDocument>,
     @InjectModel(RolePermission.name)
-    private readonly rolePermissionModel: Model<RolePermissionDocument>,
+    private readonly rolePermissionModel: HydratedModel<RolePermissionDocument>,
   ) {}
 
   async seedPermissions() {

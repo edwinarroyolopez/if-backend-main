@@ -1,4 +1,4 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, OnApplicationShutdown } from '@nestjs/common';
 import { Observable, Subject } from 'rxjs';
 
 export type RealtimeEvent = {
@@ -13,19 +13,36 @@ export type RealtimeEvent = {
 };
 
 @Injectable()
-export class RealtimeService {
+export class RealtimeService implements OnApplicationShutdown {
   private readonly events$ = new Subject<RealtimeEvent>();
+  private shuttingDown = false;
+
+  onApplicationShutdown() {
+    this.shuttingDown = true;
+    this.events$.complete();
+  }
 
   emit(event: RealtimeEvent) {
+    if (this.shuttingDown) {
+      return;
+    }
     this.events$.next(event);
   }
 
   stream(organizationId: string): Observable<{ data: RealtimeEvent }> {
     return new Observable((subscriber) => {
-      const subscription = this.events$.subscribe((event) => {
-        if (event.organizationId === organizationId) {
-          subscriber.next({ data: event });
-        }
+      if (this.shuttingDown) {
+        subscriber.complete();
+        return undefined;
+      }
+      const subscription = this.events$.subscribe({
+        next: (event) => {
+          if (event.organizationId === organizationId) {
+            subscriber.next({ data: event });
+          }
+        },
+        error: (error: unknown) => subscriber.error(error),
+        complete: () => subscriber.complete(),
       });
       return () => subscription.unsubscribe();
     });

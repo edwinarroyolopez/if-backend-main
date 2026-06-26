@@ -33,4 +33,5 @@ export function applyTestEnvironment(mongodbUri: string) {
   process.env.ARGON2_PARALLELISM = '1';
   process.env.IF_CONNECTORS_BASE_URL = 'http://127.0.0.1:7100/api/v1';
   process.env.IF_CONNECTORS_TIMEOUT_MS = '5000';
+  process.env.IF_CONNECTORS_SECRET_KEY = 'test-connectors-secret-key';
 }

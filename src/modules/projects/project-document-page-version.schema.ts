@@ -7,8 +7,10 @@ import {
   ProjectDocumentPageType,
 } from './project-document-page.schema';
 
-export type ProjectDocumentPageVersionDocument =
-  HydratedDocument<ProjectDocumentPageVersion>;
+export type ProjectDocumentPageVersionDocument = Omit<
+  HydratedDocument<ProjectDocumentPageVersion>,
+  'id'
+> & { id: string };
 
 @Schema({ collection: 'project_document_page_versions', timestamps: true })
 export class ProjectDocumentPageVersion {

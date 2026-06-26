@@ -1,7 +1,10 @@
 import { Prop, Schema, SchemaFactory } from '@nestjs/mongoose';
 import { HydratedDocument } from 'mongoose';
 
-export type AccessPolicyDocument = HydratedDocument<AccessPolicy>;
+export type AccessPolicyDocument = Omit<
+  HydratedDocument<AccessPolicy>,
+  'id'
+> & { id: string };
 
 @Schema({ collection: 'access_policies', timestamps: true })
 export class AccessPolicy {

@@ -20,7 +20,10 @@ export const PROJECT_MEMBERSHIP_ROLES = [
 ] as const;
 export type ProjectMembershipRole = (typeof PROJECT_MEMBERSHIP_ROLES)[number];
 
-export type ProjectMembershipDocument = HydratedDocument<ProjectMembership>;
+export type ProjectMembershipDocument = Omit<
+  HydratedDocument<ProjectMembership>,
+  'id'
+> & { id: string };
 
 @Schema({ collection: 'project_memberships', timestamps: true })
 export class ProjectMembership {

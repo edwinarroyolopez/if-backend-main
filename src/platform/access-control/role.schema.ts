@@ -2,7 +2,7 @@ import { Prop, Schema, SchemaFactory } from '@nestjs/mongoose';
 import { HydratedDocument } from 'mongoose';
 import { ROLE_STATUSES, RoleStatus } from 'src/common/types/domain.types';
 
-export type RoleDocument = HydratedDocument<Role>;
+export type RoleDocument = Omit<HydratedDocument<Role>, 'id'> & { id: string };
 
 @Schema({ collection: 'roles', timestamps: true })
 export class Role {

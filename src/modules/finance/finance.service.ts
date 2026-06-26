@@ -1,9 +1,9 @@
 import { Injectable, OnModuleInit } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
-import { Model } from 'mongoose';
 import { AppException } from 'src/common/errors/app-exception';
 import { REASON_CODES } from 'src/common/errors/reason-codes';
 import { AuthenticatedPrincipal } from 'src/common/types/authenticated-principal';
+import type { HydratedModel } from 'src/common/types/mongoose-model.type';
 import { CrmService } from 'src/modules/crm/crm.service';
 import { ProjectsService } from 'src/modules/projects/projects.service';
 import { ResourceScopeService } from 'src/platform/access-control/resource-scope.service';
@@ -23,7 +23,7 @@ import {
 export class FinanceService implements ResourceScopeResolver, OnModuleInit {
   constructor(
     @InjectModel(InvoiceRequest.name)
-    private readonly invoiceRequestModel: Model<InvoiceRequestDocument>,
+    private readonly invoiceRequestModel: HydratedModel<InvoiceRequestDocument>,
     private readonly crmService: CrmService,
     private readonly projectsService: ProjectsService,
     private readonly resourceScopeService: ResourceScopeService,
@@ -88,7 +88,10 @@ export class FinanceService implements ResourceScopeResolver, OnModuleInit {
         'Project was not found',
       );
     }
-    const client = await this.crmService.findById(input.clientId);
+    const client = await this.crmService.findActiveByIdForOrganization(
+      input.clientId,
+      input.organizationId,
+    );
     if (!client) {
       throw new AppException(
         404,
@@ -98,8 +101,7 @@ export class FinanceService implements ResourceScopeResolver, OnModuleInit {
     }
     if (
       project.organizationId !== input.organizationId ||
-      project.clientId !== client.id ||
-      client.organizationId !== input.organizationId
+      project.clientId !== client.id
     ) {
       throw new AppException(
         409,

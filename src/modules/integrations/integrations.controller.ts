@@ -15,6 +15,7 @@ import {
   ResolveResource,
 } from 'src/platform/access-control/access-control.decorators';
 import { AuthenticatedPrincipal } from 'src/common/types/authenticated-principal';
+import { MongoIdParamPipe } from 'src/common/pipes/mongo-id-param.pipe';
 import { JwtAuthGuard } from 'src/platform/sessions/jwt-auth.guard';
 import { IntegrationsService } from './integrations.service';
 
@@ -88,7 +89,7 @@ export class IntegrationsController {
   @ResolveResource({ type: 'MODULE', moduleKey: 'integrations' })
   async rotateServiceCredential(
     @CurrentPrincipal() principal: AuthenticatedPrincipal,
-    @Param('serviceAccountId') serviceAccountId: string,
+    @Param('serviceAccountId', MongoIdParamPipe) serviceAccountId: string,
   ) {
     return this.integrationsService.rotateCredential(
       principal,

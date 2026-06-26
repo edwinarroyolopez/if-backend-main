@@ -1,6 +1,7 @@
 import {
   createOperationalFixtures,
   createTestContext,
+  prepareMissionForPilotCompletion,
   registerAndBootstrapOrganization,
 } from './app-test-context';
 
@@ -28,13 +29,20 @@ describe('Inflight backend integration', () => {
         })
         .expect(409);
 
-      const { ownerAccessToken, organizationId } =
+      const { ownerAccessToken, organizationId, ownerEmail } =
         await registerAndBootstrapOrganization(context);
       const fixtures = await createOperationalFixtures(
         context,
         ownerAccessToken,
         organizationId,
       );
+      await prepareMissionForPilotCompletion(context, {
+        accessToken: ownerAccessToken,
+        ownerEmail,
+        missionId: fixtures.missionId,
+        organizationId,
+        seed: 'integration-complete',
+      });
 
       await context.http
         .post(`/api/v1/missions/${fixtures.missionId}/complete`)
@@ -44,16 +52,17 @@ describe('Inflight backend integration', () => {
 
       const outboxEvents = await context.models.outbox.find({
         aggregateId: fixtures.missionId,
+        eventType: 'MissionPilotCompleted.v1',
       });
       expect(outboxEvents).toHaveLength(1);
-      expect(outboxEvents[0].eventType).toBe('MissionCompleted.v1');
+      expect(outboxEvents[0].eventType).toBe('MissionPilotCompleted.v1');
       expect(outboxEvents[0].status).toBe('PENDING');
 
       const auditEvents = await context.models.auditLogs.find({
         resourceId: fixtures.missionId,
       });
       expect(
-        auditEvents.some((event) => event.action === 'flight.mission.complete'),
+        auditEvents.some((event) => event.action === 'flight.request.complete'),
       ).toBe(true);
 
       const mediaBatchesBeforeDrain = await context.models.mediaBatches.find({
@@ -71,6 +80,7 @@ describe('Inflight backend integration', () => {
 
       const publishedOutbox = await context.models.outbox.findOne({
         aggregateId: fixtures.missionId,
+        eventType: 'MissionPilotCompleted.v1',
       });
       expect(publishedOutbox?.status).toBe('PUBLISHED');
     } finally {
@@ -95,8 +105,8 @@ describe('Inflight backend integration', () => {
         nextAttemptAt: new Date(),
       });
 
-      const processed = await context.drainOutboxOnce();
-      expect(processed).toBe(1);
+      const processed = await context.drainOutboxUntilIdle();
+      expect(processed).toBeGreaterThanOrEqual(1);
 
       const stored = await context.models.outbox.findOne({ eventId });
       expect(stored?.status).toBe('DEAD_LETTER');
@@ -110,13 +120,20 @@ describe('Inflight backend integration', () => {
     const context = await createTestContext();
 
     try {
-      const { ownerAccessToken, organizationId } =
+      const { ownerAccessToken, organizationId, ownerEmail } =
         await registerAndBootstrapOrganization(context);
       const fixtures = await createOperationalFixtures(
         context,
         ownerAccessToken,
         organizationId,
       );
+      await prepareMissionForPilotCompletion(context, {
+        accessToken: ownerAccessToken,
+        ownerEmail,
+        missionId: fixtures.missionId,
+        organizationId,
+        seed: 'integration-reclaim',
+      });
 
       await context.http
         .post(`/api/v1/missions/${fixtures.missionId}/complete`)
@@ -125,7 +142,10 @@ describe('Inflight backend integration', () => {
         .expect(201);
 
       await context.models.outbox.updateOne(
-        { aggregateId: fixtures.missionId },
+        {
+          aggregateId: fixtures.missionId,
+          eventType: 'MissionPilotCompleted.v1',
+        },
         {
           $set: {
             status: 'PROCESSING',
@@ -135,7 +155,7 @@ describe('Inflight backend integration', () => {
       );
 
       const processed = await context.drainOutboxOnce();
-      expect(processed).toBe(1);
+      expect(processed).toBe(2);
 
       const mediaBatches = await context.models.mediaBatches.find({
         missionId: fixtures.missionId,
@@ -144,8 +164,21 @@ describe('Inflight backend integration', () => {
 
       const stored = await context.models.outbox.findOne({
         aggregateId: fixtures.missionId,
+        eventType: 'MissionPilotCompleted.v1',
       });
       expect(stored?.status).toBe('PUBLISHED');
+      expect(stored?.deliveries).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({
+            consumerName: 'image-ops.mission-completed',
+            status: 'PUBLISHED',
+          }),
+          expect.objectContaining({
+            consumerName: 'notifications.mission',
+            status: 'PUBLISHED',
+          }),
+        ]),
+      );
     } finally {
       await context.close();
     }

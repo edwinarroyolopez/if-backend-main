@@ -7,7 +7,9 @@ import {
   SessionKind,
 } from 'src/common/types/domain.types';
 
-export type AuthSessionDocument = HydratedDocument<AuthSession>;
+export type AuthSessionDocument = Omit<HydratedDocument<AuthSession>, 'id'> & {
+  id: string;
+};
 
 @Schema({ collection: 'auth_sessions', timestamps: true })
 export class AuthSession {

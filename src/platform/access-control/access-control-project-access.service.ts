@@ -1,8 +1,9 @@
 import { Injectable } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
-import { ClientSession, Model } from 'mongoose';
+import { ClientSession } from 'mongoose';
 import { AppException } from 'src/common/errors/app-exception';
 import { REASON_CODES } from 'src/common/errors/reason-codes';
+import type { HydratedModel } from 'src/common/types/mongoose-model.type';
 import { AccessControlRoleManagerService } from './access-control-role-manager.service';
 import { PermissionCatalogService } from './permission-catalog.service';
 import { SUPERADMIN_ROLE_KEY } from './permission-registry';
@@ -11,7 +12,8 @@ import { Role, RoleDocument } from './role.schema';
 @Injectable()
 export class AccessControlProjectAccessService {
   constructor(
-    @InjectModel(Role.name) private readonly roleModel: Model<RoleDocument>,
+    @InjectModel(Role.name)
+    private readonly roleModel: HydratedModel<RoleDocument>,
     private readonly roleManager: AccessControlRoleManagerService,
     private readonly permissionCatalogService: PermissionCatalogService,
   ) {}
@@ -107,6 +109,7 @@ export class AccessControlProjectAccessService {
     }
 
     await this.roleManager.assignPermissionsToRole(
+      organizationId,
       role.id,
       activePermissionKeys,
       session,

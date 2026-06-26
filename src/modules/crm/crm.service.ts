@@ -1,8 +1,8 @@
 import { Injectable, OnModuleInit } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
-import { Model } from 'mongoose';
 import { AppException } from 'src/common/errors/app-exception';
 import { REASON_CODES } from 'src/common/errors/reason-codes';
+import type { HydratedModel } from 'src/common/types/mongoose-model.type';
 import { ResourceScopeService } from 'src/platform/access-control/resource-scope.service';
 import {
   ResourceReference,
@@ -15,7 +15,7 @@ import { Client, ClientDocument } from './client.schema';
 export class CrmService implements ResourceScopeResolver, OnModuleInit {
   constructor(
     @InjectModel(Client.name)
-    private readonly clientModel: Model<ClientDocument>,
+    private readonly clientModel: HydratedModel<ClientDocument>,
     private readonly resourceScopeService: ResourceScopeService,
   ) {}
 
@@ -84,5 +84,16 @@ export class CrmService implements ResourceScopeResolver, OnModuleInit {
 
   async findById(clientId: string) {
     return this.clientModel.findById(clientId);
+  }
+
+  async findActiveByIdForOrganization(
+    clientId: string,
+    organizationId: string,
+  ) {
+    return this.clientModel.findOne({
+      _id: clientId,
+      organizationId,
+      status: 'ACTIVE',
+    });
   }
 }

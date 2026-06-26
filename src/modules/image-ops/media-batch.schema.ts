@@ -5,7 +5,9 @@ import {
   MediaBatchStatus,
 } from 'src/common/types/domain.types';
 
-export type MediaBatchDocument = HydratedDocument<MediaBatch>;
+export type MediaBatchDocument = Omit<HydratedDocument<MediaBatch>, 'id'> & {
+  id: string;
+};
 
 @Schema({ collection: 'media_batches', timestamps: true })
 export class MediaBatch {

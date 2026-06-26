@@ -10,6 +10,7 @@ async function bootstrap() {
   const configService = app.get(ConfigService);
 
   configureApp(app, configService);
+  app.enableShutdownHooks();
 
   await app.listen(configService.getOrThrow<number>('app.port'));
   console.log(`Application is running on: ${await app.getUrl()}`);

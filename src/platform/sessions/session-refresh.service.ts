@@ -1,8 +1,9 @@
 import { Injectable } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
-import { ClientSession, Model } from 'mongoose';
+import { ClientSession } from 'mongoose';
 import { AppException } from 'src/common/errors/app-exception';
 import { REASON_CODES } from 'src/common/errors/reason-codes';
+import type { HydratedModel } from 'src/common/types/mongoose-model.type';
 import { sha256 } from 'src/common/utils/hash.util';
 import { AuditService } from 'src/platform/audit/audit.service';
 import { TransactionManagerService } from 'src/platform/database/transaction-manager.service';
@@ -21,7 +22,7 @@ import {
 export class SessionRefreshService {
   constructor(
     @InjectModel(AuthSession.name)
-    private readonly authSessionModel: Model<AuthSessionDocument>,
+    private readonly authSessionModel: HydratedModel<AuthSessionDocument>,
     private readonly identityService: IdentityService,
     private readonly auditService: AuditService,
     private readonly transactionManagerService: TransactionManagerService,

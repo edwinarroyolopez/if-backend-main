@@ -7,6 +7,11 @@ import {
   invalidSchemaVersionImport,
   validProjectDocumentImport,
 } from './fixtures/project-document-imports';
+import { buildSmokeRoadmapImport } from './helpers/project-os-smoke-roadmap-import';
+import {
+  createSmokeTeamMember,
+  expectSmokeFinalReadinessAndActivity,
+} from './helpers/project-os-smoke-assertions';
 
 jest.setTimeout(60000);
 
@@ -142,7 +147,7 @@ describe('Project OS product smoke', () => {
         'inflight.project.roadmap.v1',
       );
 
-      const roadmapImport = buildRoadmapImport(snapshot.body);
+      const roadmapImport = buildSmokeRoadmapImport(snapshot.body);
       const invalidRoadmapPreview = await context.http
         .post(`/api/v1/projects/${fixtures.projectId}/roadmap-imports/preview`)
         .set('Authorization', `Bearer ${ownerAccessToken}`)
@@ -214,7 +219,7 @@ describe('Project OS product smoke', () => {
         .expect(201);
       expect(backlogCommitRetry.body.summary.created).toBe(2);
 
-      const backlogItem = backlogCommit.body.items[0] as {
+      const backlogItem = backlogCommit.body.items[0] as unknown as {
         id: string;
         version: number;
       };
@@ -252,7 +257,7 @@ describe('Project OS product smoke', () => {
         .set('Authorization', `Bearer ${ownerAccessToken}`)
         .set('Idempotency-Key', 'smoke-sprint-start')
         .expect(201);
-      const sprintItem = activeSprint.body.items[0] as {
+      const sprintItem = activeSprint.body.items[0] as unknown as {
         id: string;
         version: number;
       };
@@ -277,171 +282,19 @@ describe('Project OS product smoke', () => {
         .set('Idempotency-Key', 'smoke-sprint-complete')
         .expect(201);
 
-      const teamMember = await context.http
-        .post(`/api/v1/projects/${fixtures.projectId}/team`)
-        .set('Authorization', `Bearer ${ownerAccessToken}`)
-        .set('Idempotency-Key', 'smoke-team-create')
-        .send({
-          displayName: 'Loop Eleven Lead',
-          email: 'loop11@test.dev',
-          role: 'PROJECT_LEAD',
-          capacity: 32,
-          status: 'ACTIVE',
-        })
-        .expect(201);
-      expect(teamMember.body.capacityUnit).toBe('HOURS_PER_WEEK');
-
-      const finalReadiness = await context.http
-        .get(`/api/v1/projects/${fixtures.projectId}/readiness`)
-        .set('Authorization', `Bearer ${ownerAccessToken}`)
-        .expect(200);
-      expect(finalReadiness.body.status).toBe('READY_TO_START');
-      expect(finalReadiness.body.completedSignals).toEqual(
-        expect.arrayContaining([
-          expect.objectContaining({ code: 'MINIMUM_TEAM_READY' }),
-          expect.objectContaining({ code: 'SCRUM_READY' }),
-          expect.objectContaining({ code: 'CONTEXT_SNAPSHOT_READY' }),
-        ]),
-      );
-
-      const activity = await context.http
-        .get(`/api/v1/projects/${fixtures.projectId}/activity?limit=80`)
-        .set('Authorization', `Bearer ${ownerAccessToken}`)
-        .expect(200);
-      const activityTypes = activity.body.items.map(
-        (event: { type: string }) => event.type,
-      );
-      expect(activityTypes).toEqual(
-        expect.arrayContaining([
-          'PROJECT_CREATED',
-          'DOCUMENTATION_IMPORTED',
-          'DOCUMENT_PAGE_APPROVED',
-          'CONTEXT_SNAPSHOT_CREATED',
-          'ROADMAP_IMPORTED',
-          'ROADMAP_ACTIVATED',
-          'BACKLOG_IMPORTED',
-          'BACKLOG_ITEM_UPDATED',
-          'SPRINT_CREATED',
-          'SPRINT_ITEMS_ADDED',
-          'SPRINT_STARTED',
-          'SPRINT_BOARD_MOVED',
-          'SPRINT_COMPLETED',
-          'TEAM_MEMBER_CREATED',
-        ]),
-      );
-
-      const secondOrg = await registerAndBootstrapOrganization(
+      await createSmokeTeamMember({
         context,
-        'project-os-smoke-cross-org',
-      );
-      const crossOrg = await context.http
-        .get(`/api/v1/projects/${fixtures.projectId}/activity`)
-        .set('Authorization', `Bearer ${secondOrg.ownerAccessToken}`)
-        .expect(403);
-      expect(crossOrg.body.requestId).toBeTruthy();
+        accessToken: ownerAccessToken,
+        projectId: fixtures.projectId,
+      });
+
+      await expectSmokeFinalReadinessAndActivity({
+        context,
+        accessToken: ownerAccessToken,
+        projectId: fixtures.projectId,
+      });
     } finally {
       await context.close();
     }
   });
 });
-
-function buildRoadmapImport(snapshot: Record<string, unknown>) {
-  const snapshotId = snapshot.id as string;
-  const snapshotKey = snapshot.snapshotKey as string;
-  const snapshotHash = snapshot.approvedDocumentationHash as string;
-  const sourceReferences = [
-    {
-      referenceType: 'SNAPSHOT',
-      referenceId: snapshotId,
-      referenceKey: snapshotKey,
-    },
-  ];
-  return {
-    schemaVersion: 'inflight.project.roadmap.v1',
-    generationStatus: 'READY',
-    promptMetadata: {
-      promptPurpose: 'PROJECT_ROADMAP_GENERATION',
-      promptTemplateVersion: 'project-roadmap-generation-v1',
-      contractVersion: 'inflight.project.roadmap.v1',
-    },
-    snapshotReference: { snapshotId, snapshotKey, snapshotHash },
-    roadmap: {
-      title: 'Roadmap Smoke',
-      versionLabel: 'v1',
-      startDate: '2026-07-01',
-      endDate: '2026-09-30',
-      planningAssumptions: [
-        { key: 'assumption-1', statement: 'Smoke E2E listo', sourceReferences },
-      ],
-      constraints: [
-        {
-          key: 'constraint-1',
-          statement: 'Sin proveedor IA',
-          sourceReferences,
-        },
-      ],
-    },
-    horizons: [
-      {
-        key: 'h1',
-        label: 'Smoke Horizon',
-        startDate: '2026-07-01',
-        endDate: '2026-09-30',
-        objective: 'Validar Project OS completo',
-        sourceReferences,
-      },
-    ],
-    milestones: [
-      {
-        key: 'm1',
-        horizonKey: 'h1',
-        title: 'Smoke Milestone',
-        objective: 'Preparar producto',
-        targetDate: '2026-08-01',
-        status: 'PLANNED',
-        order: 0,
-        dependencies: [],
-        sourceReferences,
-      },
-    ],
-    epics: [
-      {
-        key: 'e1',
-        milestoneKey: 'm1',
-        title: 'Smoke Epic',
-        objective: 'Conectar superficie primaria',
-        expectedOutcome: 'Smoke con persistencia',
-        priority: 1,
-        status: 'PLANNED',
-        order: 0,
-        estimate: { unit: 'POINTS', value: 8 },
-        dependencies: [],
-        sourceReferences,
-      },
-    ],
-    backlogCandidates: [
-      {
-        key: 'smoke-candidate-1',
-        epicKey: 'e1',
-        title: 'Smoke backlog principal',
-        type: 'STORY',
-        description: 'Permite probar sprint real.',
-        priority: 1,
-        estimate: { unit: 'T_SHIRT', value: 'M' },
-        acceptanceCriteria: ['Sprint real visible'],
-        sourceReferences,
-      },
-      {
-        key: 'smoke-candidate-2',
-        epicKey: 'e1',
-        title: 'Smoke backlog secundario',
-        type: 'TASK',
-        description: 'Permite probar dedupe de backlog.',
-        priority: 2,
-        estimate: { unit: 'T_SHIRT', value: 'S' },
-        acceptanceCriteria: ['Backlog idempotente'],
-        sourceReferences,
-      },
-    ],
-  };
-}

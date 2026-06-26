@@ -9,7 +9,9 @@ import {
   ProjectStatus,
 } from 'src/common/types/domain.types';
 
-export type ProjectDocument = HydratedDocument<Project>;
+export type ProjectDocument = Omit<HydratedDocument<Project>, 'id'> & {
+  id: string;
+};
 
 @Schema({ collection: 'projects', timestamps: true })
 export class Project {

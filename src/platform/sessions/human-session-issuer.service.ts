@@ -1,9 +1,10 @@
 import { randomUUID } from 'node:crypto';
 import { Injectable } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
-import { ClientSession, Model } from 'mongoose';
+import { ClientSession } from 'mongoose';
 import { AppException } from 'src/common/errors/app-exception';
 import { REASON_CODES } from 'src/common/errors/reason-codes';
+import type { HydratedModel } from 'src/common/types/mongoose-model.type';
 import { sha256 } from 'src/common/utils/hash.util';
 import { PrincipalAuthorizationService } from 'src/platform/access-control/principal-authorization.service';
 import { IdentityService } from 'src/platform/identity/identity.service';
@@ -27,7 +28,7 @@ export type IssuedHumanSession = {
 export class HumanSessionIssuerService {
   constructor(
     @InjectModel(AuthSession.name)
-    private readonly authSessionModel: Model<AuthSessionDocument>,
+    private readonly authSessionModel: HydratedModel<AuthSessionDocument>,
     private readonly identityService: IdentityService,
     private readonly principalAuthorizationService: PrincipalAuthorizationService,
     private readonly sessionTokenService: SessionTokenService,

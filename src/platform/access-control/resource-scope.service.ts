@@ -3,12 +3,18 @@ import { Request } from 'express';
 import { AppException } from 'src/common/errors/app-exception';
 import { REASON_CODES } from 'src/common/errors/reason-codes';
 import { AuthenticatedPrincipal } from 'src/common/types/authenticated-principal';
+import { isObjectId } from 'src/common/utils/object-id.util';
 import {
   ResolveResourceOptions,
   ResourceReference,
   ResourceScopeContext,
   ResourceScopeResolver,
 } from './resource-scope.types';
+
+type ResourceRequest = Omit<Request, 'body'> & {
+  user: AuthenticatedPrincipal;
+  body?: Record<string, unknown>;
+};
 
 @Injectable()
 export class ResourceScopeService {
@@ -36,10 +42,7 @@ export class ResourceScopeService {
   }
 
   async resolveForRequest(
-    request: Request & {
-      user: AuthenticatedPrincipal;
-      body?: Record<string, unknown>;
-    },
+    request: ResourceRequest,
     options: ResolveResourceOptions,
   ): Promise<ResourceScopeContext> {
     const principal = request.user;
@@ -98,6 +101,13 @@ export class ResourceScopeService {
         'Request scope is not covered',
       );
     }
+    if (!isObjectId(resourceId)) {
+      throw new AppException(
+        404,
+        REASON_CODES.RESOURCE_NOT_FOUND,
+        'Resource was not found',
+      );
+    }
 
     const resolved = await this.resolveResourceReference({
       resourceType: options.type,
@@ -122,7 +132,7 @@ export class ResourceScopeService {
 }
 
 function resolveResourceId(
-  request: Request & { body?: Record<string, unknown> },
+  request: ResourceRequest,
   options: ResolveResourceOptions,
 ): string | undefined {
   if (options.param) {

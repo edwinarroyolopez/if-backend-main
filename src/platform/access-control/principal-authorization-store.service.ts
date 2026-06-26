@@ -1,6 +1,6 @@
 import { Injectable } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
-import { Model } from 'mongoose';
+import type { HydratedModel } from 'src/common/types/mongoose-model.type';
 import { AccessPolicy, AccessPolicyDocument } from './access-policy.schema';
 import { assignmentIsCurrentlyValid } from './authorization-fingerprint';
 import {
@@ -23,14 +23,15 @@ type PrincipalType = 'USER' | 'SERVICE_ACCOUNT';
 export class PrincipalAuthorizationStore {
   constructor(
     @InjectModel(PermissionDefinition.name)
-    private readonly permissionDefinitionModel: Model<PermissionDefinitionDocument>,
-    @InjectModel(Role.name) private readonly roleModel: Model<RoleDocument>,
+    private readonly permissionDefinitionModel: HydratedModel<PermissionDefinitionDocument>,
+    @InjectModel(Role.name)
+    private readonly roleModel: HydratedModel<RoleDocument>,
     @InjectModel(RolePermission.name)
-    private readonly rolePermissionModel: Model<RolePermissionDocument>,
+    private readonly rolePermissionModel: HydratedModel<RolePermissionDocument>,
     @InjectModel(RoleAssignment.name)
-    private readonly roleAssignmentModel: Model<RoleAssignmentDocument>,
+    private readonly roleAssignmentModel: HydratedModel<RoleAssignmentDocument>,
     @InjectModel(AccessPolicy.name)
-    private readonly accessPolicyModel: Model<AccessPolicyDocument>,
+    private readonly accessPolicyModel: HydratedModel<AccessPolicyDocument>,
   ) {}
 
   async loadAuthorizationGraphForPrincipal(input: {

@@ -12,7 +12,10 @@ export type ProjectRoadmapItem = {
   deliveryRisk?: string;
 };
 
-export type ProjectRoadmapDocument = HydratedDocument<ProjectRoadmap>;
+export type ProjectRoadmapDocument = Omit<
+  HydratedDocument<ProjectRoadmap>,
+  'id'
+> & { id: string };
 
 @Schema({ collection: 'project_roadmaps', timestamps: true })
 export class ProjectRoadmap {

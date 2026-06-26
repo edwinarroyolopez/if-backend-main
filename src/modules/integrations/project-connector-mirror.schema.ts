@@ -19,8 +19,10 @@ export type ProjectConnectorEndpointMirror = {
   status: 'ACTIVE';
 };
 
-export type ProjectConnectorMirrorDocument =
-  HydratedDocument<ProjectConnectorMirror>;
+export type ProjectConnectorMirrorDocument = Omit<
+  HydratedDocument<ProjectConnectorMirror>,
+  'id'
+> & { id: string };
 
 @Schema({ collection: 'project_connector_mirrors', timestamps: true })
 export class ProjectConnectorMirror {
@@ -49,7 +51,7 @@ export class ProjectConnectorMirror {
   host!: string;
 
   @Prop({ type: String, select: false })
-  apiKey?: string;
+  apiKeyCiphertext?: string;
 
   @Prop({ type: String })
   apiKeyPrefix?: string;

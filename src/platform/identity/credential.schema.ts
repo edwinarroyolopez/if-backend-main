@@ -7,7 +7,9 @@ import {
   CredentialType,
 } from 'src/common/types/domain.types';
 
-export type CredentialDocument = HydratedDocument<Credential>;
+export type CredentialDocument = Omit<HydratedDocument<Credential>, 'id'> & {
+  id: string;
+};
 
 @Schema({ collection: 'credentials', timestamps: true })
 export class Credential {

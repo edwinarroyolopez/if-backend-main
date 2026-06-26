@@ -12,7 +12,10 @@ export const PROJECT_SPRINT_ITEM_BOARD_STATUSES = [
 export type ProjectSprintItemBoardStatus =
   (typeof PROJECT_SPRINT_ITEM_BOARD_STATUSES)[number];
 
-export type ProjectSprintItemDocument = HydratedDocument<ProjectSprintItem>;
+export type ProjectSprintItemDocument = Omit<
+  HydratedDocument<ProjectSprintItem>,
+  'id'
+> & { id: string };
 
 @Schema({ collection: 'project_sprint_items', timestamps: true })
 export class ProjectSprintItem {

@@ -23,11 +23,12 @@
     "test:security": "jest --config ./test/jest-e2e.json --runInBand test/security.e2e-spec.ts",
     "test:concurrency": "jest --config ./test/jest-e2e.json --runInBand test/concurrency.e2e-spec.ts",
     "test:e2e": "jest --config ./test/jest-e2e.json --runInBand test/app.e2e-spec.ts",
+    "test:e2e:all": "jest --config ./test/jest-e2e.json --runInBand",
     "superadmin:bootstrap": "ts-node -r tsconfig-paths/register src/scripts/superadmin-bootstrap.ts",
     "audit:file-size": "node ./scripts/audit-file-size.mjs",
     "audit:secrets": "node ./scripts/audit-secrets.mjs",
     "audit:architecture": "node ./scripts/audit-architecture.mjs",
-    "test:release": "yarn lint && yarn typecheck && yarn test && yarn test:integration && yarn test:security && yarn test:concurrency && yarn test:e2e && yarn build && yarn audit:file-size && yarn audit:secrets && yarn audit:architecture"
+    "test:release": "yarn lint && yarn typecheck && yarn test && yarn test:cov && yarn test:integration && yarn test:security && yarn test:concurrency && yarn test:e2e:all && yarn build && yarn audit:file-size && yarn audit:secrets && yarn audit:architecture"
   },
   "dependencies": {
     "@nestjs/common": "^11.0.1",

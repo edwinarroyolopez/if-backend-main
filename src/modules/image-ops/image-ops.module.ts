@@ -32,4 +32,10 @@ import { Sample, SampleSchema } from './sample.schema';
   ],
   exports: [ImageOpsService],
 })
-export class ImageOpsModule {}
+export class ImageOpsModule {
+  constructor(
+    private readonly missionCompletedHandler: ImageOpsMissionCompletedHandler,
+  ) {
+    void this.missionCompletedHandler;
+  }
+}

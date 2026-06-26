@@ -1,7 +1,10 @@
 import { Prop, Schema, SchemaFactory } from '@nestjs/mongoose';
 import { HydratedDocument } from 'mongoose';
 
-export type MissionMediaAssetDocument = HydratedDocument<MissionMediaAsset>;
+export type MissionMediaAssetDocument = Omit<
+  HydratedDocument<MissionMediaAsset>,
+  'id'
+> & { id: string };
 
 export const MISSION_MEDIA_RESOURCE_TYPES = ['image', 'video'] as const;
 export type MissionMediaResourceType =

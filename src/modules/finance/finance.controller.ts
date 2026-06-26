@@ -16,6 +16,7 @@ import {
   ResolveResource,
 } from 'src/platform/access-control/access-control.decorators';
 import { AuthenticatedPrincipal } from 'src/common/types/authenticated-principal';
+import { MongoIdParamPipe } from 'src/common/pipes/mongo-id-param.pipe';
 import { JwtAuthGuard } from 'src/platform/sessions/jwt-auth.guard';
 import { FinanceService } from './finance.service';
 
@@ -90,7 +91,7 @@ export class FinanceController {
   })
   async approveInvoice(
     @CurrentPrincipal() principal: AuthenticatedPrincipal,
-    @Param('invoiceRequestId') invoiceRequestId: string,
+    @Param('invoiceRequestId', MongoIdParamPipe) invoiceRequestId: string,
   ) {
     const invoiceRequest = await this.financeService.approveInvoice(
       principal,

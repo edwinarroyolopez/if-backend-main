@@ -20,7 +20,10 @@ export const PROJECT_BACKLOG_ITEM_TYPES = [
 export type ProjectBacklogItemType =
   (typeof PROJECT_BACKLOG_ITEM_TYPES)[number];
 
-export type ProjectBacklogItemDocument = HydratedDocument<ProjectBacklogItem>;
+export type ProjectBacklogItemDocument = Omit<
+  HydratedDocument<ProjectBacklogItem>,
+  'id'
+> & { id: string };
 
 @Schema({ collection: 'project_backlog_items', timestamps: true })
 export class ProjectBacklogItem {

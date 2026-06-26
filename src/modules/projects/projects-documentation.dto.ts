@@ -6,7 +6,6 @@ import {
   IsIn,
   IsInt,
   IsMongoId,
-  IsObject,
   IsOptional,
   IsString,
   MaxLength,
@@ -290,15 +289,4 @@ export class ReorderProjectDocumentPagesDto {
   @ValidateNested({ each: true })
   @Type(() => ReorderProjectDocumentPageItemDto)
   items!: ReorderProjectDocumentPageItemDto[];
-}
-
-export class PreviewProjectDocumentImportDto {
-  @IsObject()
-  documentImport!: Record<string, unknown>;
-}
-
-export class CommitProjectDocumentImportDto extends PreviewProjectDocumentImportDto {
-  @IsString()
-  @MinLength(16)
-  previewToken!: string;
 }

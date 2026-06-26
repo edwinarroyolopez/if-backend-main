@@ -8,6 +8,7 @@ import {
   ResolveResource,
 } from 'src/platform/access-control/access-control.decorators';
 import { AuthenticatedPrincipal } from 'src/common/types/authenticated-principal';
+import { MongoIdParamPipe } from 'src/common/pipes/mongo-id-param.pipe';
 import { JwtAuthGuard } from 'src/platform/sessions/jwt-auth.guard';
 import { DeliverablesService } from './deliverables.service';
 
@@ -76,7 +77,7 @@ export class DeliverablesController {
   })
   async approveDeliverable(
     @CurrentPrincipal() principal: AuthenticatedPrincipal,
-    @Param('deliverableId') deliverableId: string,
+    @Param('deliverableId', MongoIdParamPipe) deliverableId: string,
   ) {
     const deliverable = await this.deliverablesService.approveDeliverable(
       principal,

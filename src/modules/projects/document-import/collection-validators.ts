@@ -1,14 +1,11 @@
 import {
   checklistKeys,
-  contradictionKeys,
   decisionKeys,
   decisionStatuses,
   openQuestionKeys,
   riskImpacts,
   riskKeys,
   riskLikelihoods,
-  sourceReferenceKeys,
-  sourceReferenceTypes,
   statementKeys,
 } from './constants';
 import {
@@ -18,7 +15,6 @@ import {
   assertClientReference,
   assertEnum,
   assertInteger,
-  assertOptionalNumber,
   assertOptionalStringLength,
   assertStringLength,
   isRecord,
@@ -29,9 +25,11 @@ import type {
   DocumentImportValidationIssue,
   OpenQuestion,
   Risk,
-  SourceReference,
   TraceableStatement,
 } from './types';
+export { validateContradictions } from './contradiction-validator';
+export { validateSourceReferenceArray } from './source-reference-validator';
+import { validateSourceReferenceArray } from './source-reference-validator';
 
 export function validateChecklistArray(
   value: unknown,
@@ -43,8 +41,9 @@ export function validateChecklistArray(
     errors.push({ path, message: 'checklist must be an array.' });
     return [];
   }
-  assertArrayLength(value, path, 0, maxItems, errors);
-  value.forEach((item, index) => {
+  const items = value as unknown[];
+  assertArrayLength(items, path, 0, maxItems, errors);
+  items.forEach((item, index) => {
     const itemPath = `${path}[${index}]`;
     if (!isRecord(item)) {
       errors.push({
@@ -73,7 +72,7 @@ export function validateChecklistArray(
       errors,
     );
   });
-  return value;
+  return items;
 }
 
 export function validateStatementArray(
@@ -260,105 +259,4 @@ export function validateOpenQuestionArray(
     );
   });
   return value as OpenQuestion[];
-}
-
-export function validateContradictions(
-  value: unknown,
-  errors: DocumentImportValidationIssue[],
-) {
-  if (value === undefined) {
-    return;
-  }
-  if (!Array.isArray(value)) {
-    errors.push({
-      path: '$.contradictions',
-      message: 'contradictions must be an array.',
-    });
-    return;
-  }
-  assertArrayLength(value, '$.contradictions', 0, 50, errors);
-  value.forEach((item, index) => {
-    const path = `$.contradictions[${index}]`;
-    if (!isRecord(item)) {
-      errors.push({ path, message: 'Contradiction must be an object.' });
-      return;
-    }
-    assertAllowedKeys(item, contradictionKeys, path, errors);
-    requireFields(
-      item,
-      ['key', 'description', 'conflictingSourceReferences'],
-      path,
-      errors,
-    );
-    assertClientReference(item.key, `${path}.key`, errors);
-    assertStringLength(
-      item.description,
-      `${path}.description`,
-      3,
-      1500,
-      errors,
-    );
-    validateSourceReferenceArray(
-      item.conflictingSourceReferences,
-      `${path}.conflictingSourceReferences`,
-      2,
-      20,
-      errors,
-    );
-  });
-}
-
-export function validateSourceReferenceArray(
-  value: unknown,
-  path: string,
-  minItems: number,
-  maxItems: number,
-  errors: DocumentImportValidationIssue[],
-) {
-  if (!Array.isArray(value)) {
-    errors.push({ path, message: 'sourceReferences must be an array.' });
-    return [];
-  }
-  assertArrayLength(value, path, minItems, maxItems, errors);
-  value.forEach((item, index) => {
-    const itemPath = `${path}[${index}]`;
-    if (!isRecord(item)) {
-      errors.push({
-        path: itemPath,
-        message: 'Source reference must be an object.',
-      });
-      return;
-    }
-    assertAllowedKeys(item, sourceReferenceKeys, itemPath, errors);
-    requireFields(item, ['referenceType', 'referenceKey'], itemPath, errors);
-    assertEnum(
-      item.referenceType,
-      sourceReferenceTypes,
-      `${itemPath}.referenceType`,
-      errors,
-    );
-    assertStringLength(
-      item.referenceKey,
-      `${itemPath}.referenceKey`,
-      1,
-      160,
-      errors,
-    );
-    assertOptionalStringLength(item.path, `${itemPath}.path`, 1, 300, errors);
-    assertOptionalStringLength(
-      item.quote,
-      `${itemPath}.quote`,
-      1,
-      1000,
-      errors,
-    );
-    assertOptionalNumber(
-      item.confidence,
-      `${itemPath}.confidence`,
-      0,
-      1,
-      errors,
-    );
-  });
-  return value as SourceReference[];
 }

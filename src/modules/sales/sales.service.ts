@@ -1,10 +1,12 @@
 import { Injectable } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
-import { ClientSession, Model } from 'mongoose';
+import { ClientSession } from 'mongoose';
 import { AppException } from 'src/common/errors/app-exception';
 import { REASON_CODES } from 'src/common/errors/reason-codes';
 import { AuthenticatedPrincipal } from 'src/common/types/authenticated-principal';
+import type { HydratedModel } from 'src/common/types/mongoose-model.type';
 import { AuditService } from 'src/platform/audit/audit.service';
+import { CrmService } from 'src/modules/crm/crm.service';
 import { ProjectsService } from 'src/modules/projects/projects.service';
 import { Opportunity, OpportunityDocument } from './opportunity.schema';
 
@@ -12,7 +14,8 @@ import { Opportunity, OpportunityDocument } from './opportunity.schema';
 export class SalesService {
   constructor(
     @InjectModel(Opportunity.name)
-    private readonly opportunityModel: Model<OpportunityDocument>,
+    private readonly opportunityModel: HydratedModel<OpportunityDocument>,
+    private readonly crmService: CrmService,
     private readonly projectsService: ProjectsService,
     private readonly auditService: AuditService,
   ) {}
@@ -23,6 +26,18 @@ export class SalesService {
     name: string;
     createdBy: string;
   }) {
+    const client = await this.crmService.findActiveByIdForOrganization(
+      input.clientId,
+      input.organizationId,
+    );
+    if (!client) {
+      throw new AppException(
+        404,
+        REASON_CODES.RESOURCE_NOT_FOUND,
+        'Client was not found',
+      );
+    }
+
     const [opportunity] = await this.opportunityModel.create([
       {
         organizationId: input.organizationId,

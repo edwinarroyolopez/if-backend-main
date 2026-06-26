@@ -56,11 +56,13 @@ export class AccessControlService implements OnModuleInit {
   }
 
   async assignPermissionsToRole(
+    organizationId: string,
     roleId: string,
     permissionKeys: string[],
     session: ClientSession,
   ) {
     return this.roleManager.assignPermissionsToRole(
+      organizationId,
       roleId,
       permissionKeys,
       session,

@@ -1,9 +1,9 @@
 import { Injectable } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
-import { Model } from 'mongoose';
 import { AppException } from 'src/common/errors/app-exception';
 import { REASON_CODES } from 'src/common/errors/reason-codes';
 import { AuthenticatedPrincipal } from 'src/common/types/authenticated-principal';
+import type { HydratedModel } from 'src/common/types/mongoose-model.type';
 import { PrincipalAuthorizationService } from 'src/platform/access-control/principal-authorization.service';
 import { AuditService } from 'src/platform/audit/audit.service';
 import { TransactionManagerService } from 'src/platform/database/transaction-manager.service';
@@ -16,7 +16,7 @@ import { SessionRefreshService } from './session-refresh.service';
 export class SessionsService {
   constructor(
     @InjectModel(AuthSession.name)
-    private readonly authSessionModel: Model<AuthSessionDocument>,
+    private readonly authSessionModel: HydratedModel<AuthSessionDocument>,
     private readonly identityService: IdentityService,
     private readonly principalAuthorizationService: PrincipalAuthorizationService,
     private readonly auditService: AuditService,

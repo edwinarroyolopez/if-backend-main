@@ -1,4 +1,9 @@
-import { type TestContext } from '../app-test-context';
+import {
+  loginNativeUser,
+  registerAndBootstrapOrganization,
+  registerNativeUser,
+  type TestContext,
+} from '../app-test-context';
 import { buildRoadmapImport } from './project-roadmap-import-builder';
 
 export async function prepareReadyProject(
@@ -118,4 +123,121 @@ export async function prepareReadyProject(
     .set('Idempotency-Key', 'team-sprint-start')
     .expect(201);
   return { sprintId: sprint.body.id as string };
+}
+
+export async function expectTeamAccessRestrictions(input: {
+  context: TestContext;
+  ownerAccessToken: string;
+  ownerEmail: string;
+  organizationId: string;
+  projectId: string;
+  activeMemberId: string;
+  activeMemberVersion: number;
+}) {
+  const {
+    context,
+    ownerAccessToken,
+    ownerEmail,
+    organizationId,
+    projectId,
+    activeMemberId,
+    activeMemberVersion,
+  } = input;
+  const secondOrg = await registerAndBootstrapOrganization(
+    context,
+    'project-team-cross-org',
+  );
+  await context.http
+    .get(`/api/v1/projects/${projectId}/team`)
+    .set('Authorization', `Bearer ${secondOrg.ownerAccessToken}`)
+    .expect(403);
+  await context.http
+    .post(`/api/v1/projects/${projectId}/team`)
+    .set('Authorization', `Bearer ${secondOrg.ownerAccessToken}`)
+    .set('Idempotency-Key', 'team-cross-create')
+    .send({
+      displayName: 'Cross Org',
+      role: 'OBSERVER',
+      capacity: 4,
+      status: 'PLANNED',
+    })
+    .expect(403);
+  await context.http
+    .patch(`/api/v1/projects/${projectId}/team/${activeMemberId}`)
+    .set('Authorization', `Bearer ${secondOrg.ownerAccessToken}`)
+    .send({ expectedVersion: activeMemberVersion, capacity: 8 })
+    .expect(403);
+  await context.http
+    .post(`/api/v1/projects/${projectId}/team/${activeMemberId}/deactivate`)
+    .set('Authorization', `Bearer ${secondOrg.ownerAccessToken}`)
+    .send({ expectedVersion: activeMemberVersion })
+    .expect(403);
+
+  const readRole = await context.http
+    .post('/api/v1/roles')
+    .set('Authorization', `Bearer ${ownerAccessToken}`)
+    .send({ organizationId, key: 'TEAM_READ_ONLY_ROLE', name: 'Team Read' })
+    .expect(201);
+  await context.http
+    .post(`/api/v1/roles/${readRole.body.id as string}/permissions`)
+    .set('Authorization', `Bearer ${ownerAccessToken}`)
+    .send({ permissionKeys: ['projects.project.read', 'projects.team.read'] })
+    .expect(201);
+  const readUser = await registerNativeUser(context, {
+    email: 'team-read@test.dev',
+    displayName: 'Team Read',
+    password: 'TeamRead123!',
+  });
+  await context.http
+    .post('/api/v1/role-assignments')
+    .set('Authorization', `Bearer ${ownerAccessToken}`)
+    .send({
+      organizationId,
+      principalId: readUser.body.user.id as string,
+      roleId: readRole.body.id as string,
+      scopeType: 'ORGANIZATION',
+      scopeId: organizationId,
+    })
+    .expect(201);
+  const readLogin = await loginNativeUser(context, {
+    email: 'team-read@test.dev',
+    password: 'TeamRead123!',
+    activeOrganizationId: organizationId,
+  });
+  await context.http
+    .post(`/api/v1/projects/${projectId}/team`)
+    .set('Authorization', `Bearer ${readLogin.body.accessToken as string}`)
+    .set('Idempotency-Key', 'team-no-manage')
+    .send({
+      displayName: 'No Manage',
+      role: 'OBSERVER',
+      capacity: 1,
+      status: 'PLANNED',
+    })
+    .expect(403);
+
+  const readOnlyLogin = await loginNativeUser(context, {
+    email: ownerEmail,
+    password: 'OwnerPassword123!',
+    activeOrganizationId: organizationId,
+  });
+  await context.models.authSessions.updateOne(
+    { _id: readOnlyLogin.body.sessionId as string },
+    { $set: { readOnly: true } },
+  );
+  await context.http
+    .get(`/api/v1/projects/${projectId}/team`)
+    .set('Authorization', `Bearer ${readOnlyLogin.body.accessToken as string}`)
+    .expect(200);
+  await context.http
+    .post(`/api/v1/projects/${projectId}/team`)
+    .set('Authorization', `Bearer ${readOnlyLogin.body.accessToken as string}`)
+    .set('Idempotency-Key', 'team-readonly-create')
+    .send({
+      displayName: 'Readonly',
+      role: 'OBSERVER',
+      capacity: 1,
+      status: 'PLANNED',
+    })
+    .expect(403);
 }

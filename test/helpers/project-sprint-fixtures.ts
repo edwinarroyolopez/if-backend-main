@@ -258,3 +258,24 @@ export async function expectSprintAccessRestrictions(
     .set('Idempotency-Key', 'sprint-readonly-cancel')
     .expect(403);
 }
+
+export async function expectSprintAuditActions(
+  context: TestContext,
+  organizationId: string,
+) {
+  for (const action of [
+    'projects.sprint.create',
+    'projects.sprint.add_items',
+    'projects.sprint.remove_item',
+    'projects.sprint.start',
+    'projects.sprint.board_move',
+    'projects.sprint.complete',
+    'projects.sprint.cancel',
+  ]) {
+    const audit = await context.models.auditLogs.findOne({
+      organizationId,
+      action,
+    });
+    expect(audit).toBeTruthy();
+  }
+}

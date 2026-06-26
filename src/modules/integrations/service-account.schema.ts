@@ -5,7 +5,10 @@ import {
   ServiceAccountStatus,
 } from 'src/common/types/domain.types';
 
-export type ServiceAccountDocument = HydratedDocument<ServiceAccount>;
+export type ServiceAccountDocument = Omit<
+  HydratedDocument<ServiceAccount>,
+  'id'
+> & { id: string };
 
 @Schema({ collection: 'service_accounts', timestamps: true })
 export class ServiceAccount {

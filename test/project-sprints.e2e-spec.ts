@@ -6,8 +6,13 @@ import {
 import {
   createSprintBacklogFixtures,
   createSprintBacklogItem,
+  expectSprintAuditActions,
   expectSprintAccessRestrictions,
 } from './helpers/project-sprint-fixtures';
+import {
+  expectSprintBoardAndCompletionFlow,
+  expectSprintCancellationFlow,
+} from './helpers/project-sprint-board-flow';
 
 jest.setTimeout(30000);
 
@@ -243,139 +248,19 @@ describe('Project sprints', () => {
         .set('Idempotency-Key', 'sprint-start-other-project')
         .expect(201);
 
-      const itemOne = active.body.items[0];
-      const movedToProgress = await context.http
-        .post(
-          `/api/v1/projects/${fixtures.projectId}/sprints/${sprint.body.id as string}/board-move`,
-        )
-        .set('Authorization', `Bearer ${ownerAccessToken}`)
-        .send({
-          itemId: itemOne.id as string,
-          toStatus: 'IN_PROGRESS',
-          order: 0,
-          expectedVersion: itemOne.version as number,
-        })
-        .expect(201);
-      const progressItem = movedToProgress.body.items.find(
-        (item: { id: string }) => item.id === itemOne.id,
-      );
-      expect(progressItem.boardStatus).toBe('IN_PROGRESS');
-      await context.http
-        .post(
-          `/api/v1/projects/${fixtures.projectId}/sprints/${sprint.body.id as string}/board-move`,
-        )
-        .set('Authorization', `Bearer ${ownerAccessToken}`)
-        .send({
-          itemId: itemOne.id as string,
-          toStatus: 'REVIEW',
-          order: 0,
-          expectedVersion: itemOne.version as number,
-        })
-        .expect(409);
-      const movedToReview = await context.http
-        .post(
-          `/api/v1/projects/${fixtures.projectId}/sprints/${sprint.body.id as string}/board-move`,
-        )
-        .set('Authorization', `Bearer ${ownerAccessToken}`)
-        .send({
-          itemId: itemOne.id as string,
-          toStatus: 'REVIEW',
-          order: 0,
-          expectedVersion: progressItem.version as number,
-        })
-        .expect(201);
-      const reviewItem = movedToReview.body.items.find(
-        (item: { id: string }) => item.id === itemOne.id,
-      );
-      const movedToDone = await context.http
-        .post(
-          `/api/v1/projects/${fixtures.projectId}/sprints/${sprint.body.id as string}/board-move`,
-        )
-        .set('Authorization', `Bearer ${ownerAccessToken}`)
-        .send({
-          itemId: itemOne.id as string,
-          toStatus: 'DONE',
-          order: 0,
-          expectedVersion: reviewItem.version as number,
-        })
-        .expect(201);
-      const doneItem = movedToDone.body.items.find(
-        (item: { id: string }) => item.id === itemOne.id,
-      );
-      expect(doneItem.boardStatus).toBe('DONE');
-
-      const todoItem = movedToDone.body.items.find(
-        (item: { id: string }) => item.id !== itemOne.id,
-      );
-      const reorderedTodo = await context.http
-        .post(
-          `/api/v1/projects/${fixtures.projectId}/sprints/${sprint.body.id as string}/board-move`,
-        )
-        .set('Authorization', `Bearer ${ownerAccessToken}`)
-        .send({
-          itemId: todoItem.id as string,
-          toStatus: 'TO_DO',
-          order: 0,
-          expectedVersion: todoItem.version as number,
-        })
-        .expect(201);
-      expect(
-        reorderedTodo.body.items.find(
-          (item: { id: string }) => item.id === todoItem.id,
-        ).order,
-      ).toBe(0);
-
-      const persisted = await context.http
-        .get(
-          `/api/v1/projects/${fixtures.projectId}/sprints/${sprint.body.id as string}`,
-        )
-        .set('Authorization', `Bearer ${ownerAccessToken}`)
-        .expect(200);
-      expect(
-        persisted.body.items.find(
-          (item: { id: string }) => item.id === itemOne.id,
-        ).boardStatus,
-      ).toBe('DONE');
-
-      const completed = await context.http
-        .post(
-          `/api/v1/projects/${fixtures.projectId}/sprints/${sprint.body.id as string}/complete`,
-        )
-        .set('Authorization', `Bearer ${ownerAccessToken}`)
-        .set('Idempotency-Key', 'sprint-complete-main')
-        .expect(201);
-      expect(completed.body.status).toBe('COMPLETED');
-      expect(completed.body.active).toBe(false);
-
-      const cancelSprint = await context.http
-        .post(`/api/v1/projects/${fixtures.projectId}/sprints`)
-        .set('Authorization', `Bearer ${ownerAccessToken}`)
-        .set('Idempotency-Key', 'sprint-create-cancel')
-        .send({ name: 'Sprint Cancel' })
-        .expect(201);
-      const cancelBacklog = await createSprintBacklogItem(
+      const doneItem = await expectSprintBoardAndCompletionFlow({
         context,
-        ownerAccessToken,
-        fixtures.projectId,
-        'cancel-ready',
-        'READY',
-      );
-      await context.http
-        .post(
-          `/api/v1/projects/${fixtures.projectId}/sprints/${cancelSprint.body.id as string}/add-items`,
-        )
-        .set('Authorization', `Bearer ${ownerAccessToken}`)
-        .set('Idempotency-Key', 'sprint-add-cancel')
-        .send({ backlogItemIds: [cancelBacklog.id] })
-        .expect(201);
-      const cancelled = await context.http
-        .post(
-          `/api/v1/projects/${fixtures.projectId}/sprints/${cancelSprint.body.id as string}/cancel`,
-        )
-        .set('Authorization', `Bearer ${ownerAccessToken}`)
-        .set('Idempotency-Key', 'sprint-cancel')
-        .expect(201);
-      expect(cancelled.body.status).toBe('CANCELLED');
+        accessToken: ownerAccessToken,
+        projectId: fixtures.projectId,
+        sprintId: sprint.body.id as string,
+        activeSprint: active.body,
+      });
+
+      await expectSprintCancellationFlow({
+        context,
+        accessToken: ownerAccessToken,
+        projectId: fixtures.projectId,
+      });
 
       await expectSprintAccessRestrictions(context, {
         ownerEmail,
@@ -388,21 +273,7 @@ describe('Project sprints', () => {
         doneItem,
       });
 
-      for (const action of [
-        'projects.sprint.create',
-        'projects.sprint.add_items',
-        'projects.sprint.remove_item',
-        'projects.sprint.start',
-        'projects.sprint.board_move',
-        'projects.sprint.complete',
-        'projects.sprint.cancel',
-      ]) {
-        const audit = await context.models.auditLogs.findOne({
-          organizationId,
-          action,
-        });
-        expect(audit).toBeTruthy();
-      }
+      await expectSprintAuditActions(context, organizationId);
     } finally {
       await context.close();
     }

@@ -1,9 +1,10 @@
 import { Injectable } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
-import { ClientSession, Model } from 'mongoose';
+import { ClientSession } from 'mongoose';
 import { AppException } from 'src/common/errors/app-exception';
 import { REASON_CODES } from 'src/common/errors/reason-codes';
 import { AuthenticatedPrincipal } from 'src/common/types/authenticated-principal';
+import type { HydratedModel } from 'src/common/types/mongoose-model.type';
 import { PrincipalAuthorizationService } from 'src/platform/access-control/principal-authorization.service';
 import { AccessControlService } from 'src/platform/access-control/access-control.service';
 import { AuditService } from 'src/platform/audit/audit.service';
@@ -16,7 +17,7 @@ import { Organization, OrganizationDocument } from './organization.schema';
 export class OrganizationsService {
   constructor(
     @InjectModel(Organization.name)
-    private readonly organizationModel: Model<OrganizationDocument>,
+    private readonly organizationModel: HydratedModel<OrganizationDocument>,
     private readonly principalAuthorizationService: PrincipalAuthorizationService,
     private readonly accessControlService: AccessControlService,
     private readonly auditService: AuditService,
@@ -181,7 +182,7 @@ export class OrganizationsService {
 
   async findOrganizationById(organizationId: string, session?: ClientSession) {
     return session
-      ? this.organizationModel.findById(organizationId).session(session)
-      : this.organizationModel.findById(organizationId);
+      ? await this.organizationModel.findById(organizationId).session(session)
+      : await this.organizationModel.findById(organizationId);
   }
 }

@@ -119,7 +119,7 @@ export async function expectProjectFoundationRules() {
         key: 'wrong-client-org',
         name: 'Wrong Client Org',
       })
-      .expect(409);
+      .expect(404);
 
     const activeResponse = await context.http
       .post(
@@ -178,7 +178,7 @@ export async function expectProjectFoundationRules() {
 
     const audits = await context.models.auditLogs.find({
       organizationId: first.organizationId,
-      resourceId: internalProjectResponse.body.id as string,
+      resourceId: internalProjectResponse.body.id,
     });
     expect(
       audits.some((audit) => audit.action === 'projects.project.transition'),

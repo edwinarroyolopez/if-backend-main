@@ -1,21 +1,18 @@
 import { Injectable } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
-import { Model } from 'mongoose';
 import { AppException } from 'src/common/errors/app-exception';
 import { REASON_CODES } from 'src/common/errors/reason-codes';
 import { AuthenticatedPrincipal } from 'src/common/types/authenticated-principal';
+import type { HydratedModel } from 'src/common/types/mongoose-model.type';
 import { ProjectsService } from 'src/modules/projects/projects.service';
 import { AuditService } from 'src/platform/audit/audit.service';
 import {
   IfConnectorsRuntimeClient,
   RuntimeEndpointsResult,
-  RuntimeValidateResult,
 } from './if-connectors-runtime.client';
 import {
   applyRuntimeState,
   toAuditMirrorSnapshot,
-  toDate,
-  toEndpointMirrors,
   toProjectConnectorMirrorReadModel,
 } from './project-connector-mirror.mapper';
 import { ConnectProjectConnectorDto } from './project-connector-mirror.dto';
@@ -23,20 +20,20 @@ import {
   ProjectConnectorMirror,
   ProjectConnectorMirrorDocument,
 } from './project-connector-mirror.schema';
-
-type ProjectRecord = {
-  id: string;
-  organizationId: string;
-  key: string;
-};
+import { ConnectorSecretCryptoService } from './connector-secret-crypto.service';
+import {
+  ProjectRecord,
+  upsertMirrorFromRemote,
+} from './project-connector-mirror-upsert';
 
 @Injectable()
 export class ProjectConnectorMirrorsService {
   constructor(
     @InjectModel(ProjectConnectorMirror.name)
-    private readonly mirrorModel: Model<ProjectConnectorMirrorDocument>,
+    private readonly mirrorModel: HydratedModel<ProjectConnectorMirrorDocument>,
     private readonly projectsService: ProjectsService,
     private readonly runtimeClient: IfConnectorsRuntimeClient,
+    private readonly secretCrypto: ConnectorSecretCryptoService,
     private readonly auditService: AuditService,
   ) {}
 
@@ -88,14 +85,10 @@ export class ProjectConnectorMirrorsService {
       projectKey,
       host,
     });
-    const mirror = await this.upsertMirrorFromRemote({
-      principal,
-      project,
-      apiKey,
-      host,
-      remote,
-      action: 'connect',
-    });
+    const mirror = await upsertMirrorFromRemote(
+      { mirrorModel: this.mirrorModel, secretCrypto: this.secretCrypto },
+      { principal, project, apiKey, host, remote },
+    );
     await this.auditService.record({
       actorType: principal.principalType,
       actorId: principal.sub,
@@ -147,7 +140,7 @@ export class ProjectConnectorMirrorsService {
       requireActiveOrganizationId(principal),
     );
     const mirror = await this.findMirror(project, mirrorId, true);
-    if (!mirror.apiKey) {
+    if (!mirror.apiKeyCiphertext) {
       throw new AppException(
         409,
         REASON_CODES.PROJECT_CONNECTOR_API_KEY_REQUIRED,
@@ -158,7 +151,7 @@ export class ProjectConnectorMirrorsService {
     let remote: RuntimeEndpointsResult;
     try {
       remote = await this.runtimeClient.listRuntimeEndpoints({
-        apiKey: mirror.apiKey,
+        apiKey: this.secretCrypto.decrypt(mirror.apiKeyCiphertext),
         connectionId: mirror.remoteConnectionId,
       });
     } catch (error) {
@@ -195,60 +188,6 @@ export class ProjectConnectorMirrorsService {
     return toProjectConnectorMirrorReadModel(mirror);
   }
 
-  private async upsertMirrorFromRemote(input: {
-    principal: AuthenticatedPrincipal;
-    project: ProjectRecord;
-    apiKey: string;
-    host: string;
-    remote: RuntimeValidateResult;
-    action: 'connect';
-  }) {
-    const now = new Date();
-    const status = input.remote.connection.status;
-    const mirror = await this.mirrorModel.findOneAndUpdate(
-      {
-        organizationId: input.project.organizationId,
-        projectId: input.project.id,
-        remoteConnectionId: input.remote.connection.id,
-      },
-      {
-        $set: {
-          remoteConnectorId:
-            input.remote.connector?.id ?? input.remote.connection.connectorId,
-          connectorKey: input.remote.connector?.key,
-          connectorName: input.remote.connector?.name,
-          projectKey: input.project.key,
-          host: input.host,
-          apiKey: input.apiKey,
-          apiKeyPrefix: input.remote.connection.apiKeyPrefix,
-          status,
-          connectedAt: toDate(input.remote.connection.connectedAt),
-          blockedAt: status === 'BLOCKED' ? now : undefined,
-          blockedReason: input.remote.connection.blockedReason,
-          lastSyncedAt: toDate(input.remote.connection.lastSyncedAt) ?? now,
-          lastUsedAt: toDate(input.remote.connection.lastUsedAt),
-          endpoints: toEndpointMirrors(input.remote.endpoints ?? []),
-          updatedByUserId: input.principal.sub,
-        },
-        $setOnInsert: {
-          organizationId: input.project.organizationId,
-          projectId: input.project.id,
-          remoteConnectionId: input.remote.connection.id,
-          createdByUserId: input.principal.sub,
-        },
-      },
-      { new: true, upsert: true, setDefaultsOnInsert: true },
-    );
-    if (!mirror) {
-      throw new AppException(
-        500,
-        REASON_CODES.INTERNAL_ERROR,
-        'Connector mirror could not be stored',
-      );
-    }
-    return mirror;
-  }
-
   private async getProject(projectId: string, organizationId: string) {
     const project = await this.projectsService.findById(projectId);
     if (!project || project.organizationId !== organizationId) {
@@ -276,7 +215,7 @@ export class ProjectConnectorMirrorsService {
       projectId: project.id,
     });
     if (includeApiKey) {
-      query.select('+apiKey');
+      query.select('+apiKeyCiphertext');
     }
     const mirror = await query;
     if (!mirror) {

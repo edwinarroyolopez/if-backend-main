@@ -1,8 +1,9 @@
 import { Injectable } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
-import { ClientSession, Model } from 'mongoose';
+import { ClientSession } from 'mongoose';
 import { AppException } from 'src/common/errors/app-exception';
 import { REASON_CODES } from 'src/common/errors/reason-codes';
+import type { HydratedModel } from 'src/common/types/mongoose-model.type';
 import { normalizeEmail } from 'src/common/utils/hash.util';
 import { Credential, CredentialDocument } from './credential.schema';
 import { PasswordHasherService } from './password-hasher.service';
@@ -20,9 +21,10 @@ export type PublicUser = {
 @Injectable()
 export class IdentityService {
   constructor(
-    @InjectModel(User.name) private readonly userModel: Model<UserDocument>,
+    @InjectModel(User.name)
+    private readonly userModel: HydratedModel<UserDocument>,
     @InjectModel(Credential.name)
-    private readonly credentialModel: Model<CredentialDocument>,
+    private readonly credentialModel: HydratedModel<CredentialDocument>,
     private readonly passwordHasherService: PasswordHasherService,
   ) {}
 

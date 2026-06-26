@@ -8,8 +8,10 @@ export type ProjectDocumentationChecklistItem = {
   completed: boolean;
 };
 
-export type ProjectDocumentationDocument =
-  HydratedDocument<ProjectDocumentation>;
+export type ProjectDocumentationDocument = Omit<
+  HydratedDocument<ProjectDocumentation>,
+  'id'
+> & { id: string };
 
 @Schema({ collection: 'project_documentations', timestamps: true })
 export class ProjectDocumentation {

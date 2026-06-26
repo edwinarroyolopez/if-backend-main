@@ -7,7 +7,10 @@ import {
   ScopeType,
 } from 'src/common/types/domain.types';
 
-export type RoleAssignmentDocument = HydratedDocument<RoleAssignment>;
+export type RoleAssignmentDocument = Omit<
+  HydratedDocument<RoleAssignment>,
+  'id'
+> & { id: string };
 
 @Schema({ collection: 'role_assignments', timestamps: true })
 export class RoleAssignment {

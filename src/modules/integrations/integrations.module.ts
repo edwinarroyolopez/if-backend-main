@@ -8,6 +8,7 @@ import { SessionsModule } from 'src/platform/sessions/sessions.module';
 import { SERVICE_PRINCIPAL_LOOKUP } from 'src/platform/sessions/service-principal-lookup.port';
 import { ProjectsModule } from 'src/modules/projects/projects.module';
 import { IfConnectorsRuntimeClient } from './if-connectors-runtime.client';
+import { ConnectorSecretCryptoService } from './connector-secret-crypto.service';
 import { IntegrationsController } from './integrations.controller';
 import { IntegrationsService } from './integrations.service';
 import { ProjectConnectorMirrorsController } from './project-connector-mirrors.controller';
@@ -44,6 +45,7 @@ import {
     IntegrationsService,
     ProjectConnectorMirrorsService,
     IfConnectorsRuntimeClient,
+    ConnectorSecretCryptoService,
     TransactionManagerService,
     {
       provide: SERVICE_PRINCIPAL_LOOKUP,

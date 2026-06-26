@@ -3,42 +3,67 @@ import path from 'node:path';
 
 const root = process.cwd();
 const includeDirs = ['src', 'test', 'scripts'];
-const ignore = new Set(['node_modules', 'dist', 'coverage']);
+const ignoreDirs = new Set(['node_modules', 'dist', 'build', 'coverage']);
+const ignoredFiles = new Set([
+  'package-lock.json',
+  'npm-shrinkwrap.json',
+  'yarn.lock',
+  'pnpm-lock.yaml',
+]);
 const findings = [];
-const CONTROLLER_LINE_LIMIT = 160;
-const SERVICE_LINE_LIMIT = 350;
-const FILE_LINE_LIMIT = 450;
+const FILE_LINE_LIMIT = 300;
 
 async function walk(dir) {
   const entries = await fs.readdir(dir, { withFileTypes: true });
   for (const entry of entries) {
-    if (ignore.has(entry.name)) continue;
+    if (entry.isDirectory() && ignoreDirs.has(entry.name)) continue;
     const fullPath = path.join(dir, entry.name);
     if (entry.isDirectory()) {
       await walk(fullPath);
       continue;
     }
 
-    if (!/\.(ts|js|mjs)$/.test(entry.name)) continue;
+    if (!isAuditedFile(fullPath, entry.name)) continue;
     const relative = path.relative(root, fullPath);
-    const lines = (await fs.readFile(fullPath, 'utf8')).split('\n').length;
+    const content = await fs.readFile(fullPath, 'utf8');
+    if (isGeneratedArtifact(relative, content)) continue;
+    const lines = countPhysicalLines(content);
 
-    if (relative.endsWith('.controller.ts') && lines > CONTROLLER_LINE_LIMIT) {
-      findings.push(
-        `${relative} :: controller exceeds ${CONTROLLER_LINE_LIMIT} lines (${lines})`,
-      );
-      continue;
-    }
-    if (relative.endsWith('.service.ts') && lines > SERVICE_LINE_LIMIT) {
-      findings.push(
-        `${relative} :: service exceeds ${SERVICE_LINE_LIMIT} lines (${lines})`,
-      );
-      continue;
-    }
     if (lines > FILE_LINE_LIMIT) {
-      findings.push(`${relative} :: file exceeds ${FILE_LINE_LIMIT} lines (${lines})`);
+      findings.push(
+        `${normalizePath(relative)} :: ${lines} lines exceeds limit ${FILE_LINE_LIMIT}`,
+      );
     }
   }
+}
+
+function isAuditedFile(fullPath, fileName) {
+  if (ignoredFiles.has(fileName)) return false;
+
+  const relative = normalizePath(path.relative(root, fullPath));
+  if (/^src\/.*\.ts$/.test(relative)) return true;
+  if (/^test\/.*\.ts$/.test(relative)) return true;
+  return /^scripts\/.*\.(?:js|mjs|cjs|ts)$/.test(relative);
+}
+
+function isGeneratedArtifact(relative, content) {
+  const normalized = normalizePath(relative);
+  if (/\/generated\//.test(`/${normalized}/`)) return true;
+  if (/\.generated\.(?:ts|js|mjs|cjs)$/.test(normalized)) return true;
+
+  const header = content.split(/\r\n|\r|\n/, 5).join('\n');
+  return /(@generated|auto-generated|automatically generated)/i.test(header);
+}
+
+function countPhysicalLines(content) {
+  if (content.length === 0) return 0;
+  const lines = content.split(/\r\n|\r|\n/);
+  if (lines.at(-1) === '') lines.pop();
+  return lines.length;
+}
+
+function normalizePath(filePath) {
+  return filePath.split(path.sep).join('/');
 }
 
 await Promise.all(
@@ -51,9 +76,11 @@ await Promise.all(
   }),
 );
 
+findings.sort((left, right) => left.localeCompare(right));
+
 if (findings.length > 0) {
   findings.forEach((finding) => console.error(finding));
   process.exit(1);
 }
 
-console.log('File size audit passed.');
+console.log(`File size audit passed. Limit: ${FILE_LINE_LIMIT} lines.`);
